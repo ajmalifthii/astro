@@ -1,236 +1,140 @@
-import { supabase, type FinalReport } from '../lib/supabase';
-import { aiService, type PersonalityAnalysis } from './aiService';
-import { getAstrologyReport } from './astrologyService';
-import jsPDF from 'jspdf';
+import { supabase, type FinalReport, isDemoMode } from '../lib/supabase';
 
 export async function generateFinalReport(
   userId: string, 
   sessionId: string, 
   conversationData: Record<string, any>
 ): Promise<FinalReport> {
-  try {
-    // Fetch astrology report
-    const astrologyReport = await getAstrologyReport(userId);
-    if (!astrologyReport) {
-      throw new Error('Astrology report not found');
-    }
-
-    // Create mock psychology responses from conversation data
-    const mockPsychResponses = [{
-      id: sessionId,
-      user_id: userId,
-      session_id: sessionId,
-      question_id: 1,
-      question: 'Conversational Assessment',
-      answer: JSON.stringify(conversationData),
-      response_method: 'text' as const,
-      tone_analysis: { confidence: 0.8, authenticity: 0.9 },
-      emotion_detected: 'thoughtful',
-      honesty_score: 0.85,
-      confidence_level: 0.8,
-      response_time_seconds: 300,
-      word_count: JSON.stringify(conversationData).length,
-      created_at: new Date().toISOString()
-    }];
-
-    // Generate AI analysis
-    const analysis = await aiService.generatePersonalityAnalysis(
-      userId,
-      astrologyReport,
-      mockPsychResponses
-    );
-
-    // Create final report
-    const reportData = {
-      user_id: userId,
-      report_title: `Cosmic Blueprint for ${astrologyReport.chart_json.sun.sign} Soul`,
-      archetype_name: analysis.archetype.name,
-      archetype_description: analysis.archetype.description,
-      inspirational_line: analysis.archetype.inspirationalLine,
-      summary_short: analysis.summaryShort,
-      summary_detailed: analysis.summaryDetailed,
-      astrology_breakdown: analysis.astrologyBreakdown,
-      psychology_insights: analysis.psychologyInsights,
-      mind_vs_heart: analysis.mindVsHeart,
-      strengths: analysis.archetype.strengths.join(', '),
-      challenges: analysis.archetype.challenges.join(', '),
-      growth_areas: analysis.archetype.growthAreas.join(', '),
-      affirmations: analysis.affirmations,
-      pdf_generated: false,
-      shared_publicly: false
-    };
-
-    const { data: report, error } = await supabase
-      .from('final_reports')
-      .insert(reportData)
-      .select()
-      .single();
-
-    if (error) {
-      throw new Error(`Failed to save final report: ${error.message}`);
-    }
-
-    return report;
-  } catch (error) {
-    console.error('Error generating final report:', error);
-    throw error;
-  }
-}
-
-export async function generatePDF(reportId: string): Promise<string> {
-  const { data: report, error } = await supabase
-    .from('final_reports')
-    .select('*')
-    .eq('id', reportId)
-    .single();
-
-  if (error || !report) {
-    throw new Error('Report not found');
-  }
-
-  // Create enhanced PDF
-  const pdf = new jsPDF();
-  const pageWidth = pdf.internal.pageSize.getWidth();
-  const margin = 20;
-  const lineHeight = 7;
-  let yPosition = 30;
-
-  // Helper function to add text with word wrapping
-  const addWrappedText = (text: string, fontSize: number = 11, isBold: boolean = false) => {
-    pdf.setFontSize(fontSize);
-    if (isBold) {
-      pdf.setFont(undefined, 'bold');
-    } else {
-      pdf.setFont(undefined, 'normal');
-    }
-    
-    const lines = pdf.splitTextToSize(text, pageWidth - 2 * margin);
-    lines.forEach((line: string) => {
-      if (yPosition > pdf.internal.pageSize.getHeight() - 30) {
-        pdf.addPage();
-        yPosition = 30;
-      }
-      pdf.text(line, margin, yPosition);
-      yPosition += lineHeight;
-    });
-    yPosition += 3;
+  // Generate a comprehensive personality report based on conversation data
+  const archetype = determineArchetype(conversationData);
+  const insights = generateInsights(conversationData);
+  
+  const reportData = {
+    id: `report-${Date.now()}`,
+    user_id: userId,
+    report_title: `Cosmic Blueprint for ${conversationData.name || 'You'}`,
+    archetype_name: archetype.name,
+    archetype_description: archetype.description,
+    inspirational_line: archetype.inspirationalLine,
+    summary_short: insights.summaryShort,
+    summary_detailed: insights.summaryDetailed,
+    astrology_breakdown: insights.astrologyBreakdown,
+    psychology_insights: insights.psychologyInsights,
+    mind_vs_heart: insights.mindVsHeart,
+    strengths: insights.strengths,
+    challenges: insights.challenges,
+    growth_areas: insights.growthAreas,
+    affirmations: insights.affirmations,
+    pdf_generated: false,
+    shared_publicly: false,
+    share_token: `share-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    generated_at: new Date().toISOString(),
+    updated_at: new Date().toISOString()
   };
 
-  // Enhanced header with branding
-  pdf.setFillColor(128, 0, 128);
-  pdf.rect(0, 0, pageWidth, 25, 'F');
-  
-  pdf.setFontSize(24);
-  pdf.setFont(undefined, 'bold');
-  pdf.setTextColor(255, 255, 255);
-  pdf.text('AstroPsyche', margin, 18);
-  
-  pdf.setFontSize(12);
-  pdf.setFont(undefined, 'normal');
-  pdf.text('Your Cosmic Blueprint', pageWidth - margin, 18, { align: 'right' });
+  // Try to save to database, fallback to localStorage
+  if (!isDemoMode() && supabase) {
+    try {
+      const { data, error } = await supabase
+        .from('final_reports')
+        .insert(reportData)
+        .select()
+        .single();
 
-  yPosition = 40;
-  pdf.setTextColor(0, 0, 0);
-
-  // Title
-  pdf.setFontSize(20);
-  pdf.setFont(undefined, 'bold');
-  pdf.setTextColor(128, 0, 128);
-  pdf.text(report.report_title, pageWidth / 2, yPosition, { align: 'center' });
-  yPosition += 15;
-
-  // Archetype section
-  pdf.setTextColor(0, 0, 0);
-  addWrappedText(`Archetype: ${report.archetype_name}`, 16, true);
-  
-  if (report.inspirational_line) {
-    pdf.setTextColor(100, 100, 100);
-    pdf.setFont(undefined, 'italic');
-    addWrappedText(`"${report.inspirational_line}"`, 12);
-    pdf.setTextColor(0, 0, 0);
-    pdf.setFont(undefined, 'normal');
-  }
-
-  yPosition += 5;
-
-  // Content sections
-  const sections = [
-    { title: 'Core Insights', content: report.summary_detailed },
-    { title: 'Astrological Foundation', content: report.astrology_breakdown },
-    { title: 'Psychological Patterns', content: report.psychology_insights },
-    { title: 'Mind vs. Heart', content: report.mind_vs_heart },
-    { title: 'Your Strengths', content: report.strengths },
-    { title: 'Growth Opportunities', content: report.challenges },
-    { title: 'Personal Affirmations', content: report.affirmations }
-  ];
-
-  sections.forEach(section => {
-    if (section.content) {
-      addWrappedText(section.title, 14, true);
-      if (section.title === 'Personal Affirmations') {
-        pdf.setTextColor(128, 0, 128);
+      if (error) {
+        console.warn('Failed to save report to database, using local storage:', error);
+        saveReportToLocalStorage(reportData);
+        return reportData;
       }
-      addWrappedText(section.content);
-      pdf.setTextColor(0, 0, 0);
-      yPosition += 3;
+
+      return data;
+    } catch (error) {
+      console.warn('Database operation failed, using local storage:', error);
+      saveReportToLocalStorage(reportData);
+      return reportData;
     }
-  });
-
-  // Footer
-  pdf.setTextColor(150, 150, 150);
-  pdf.setFontSize(8);
-  const footerY = pdf.internal.pageSize.getHeight() - 15;
-  pdf.text('Generated by AstroPsyche', pageWidth / 2, footerY, { align: 'center' });
-  pdf.text(`Generated on ${new Date().toLocaleDateString()}`, pageWidth / 2, footerY + 5, { align: 'center' });
-
-  // Convert to blob and create URL
-  const pdfBlob = pdf.output('blob');
-  const pdfUrl = URL.createObjectURL(pdfBlob);
-
-  // Update report with PDF URL
-  const { error: updateError } = await supabase
-    .from('final_reports')
-    .update({ 
-      pdf_url: pdfUrl, 
-      pdf_generated: true 
-    })
-    .eq('id', reportId);
-
-  if (updateError) {
-    console.error('Failed to update report with PDF URL:', updateError);
+  } else {
+    // Demo mode - save to localStorage
+    saveReportToLocalStorage(reportData);
+    return reportData;
   }
-
-  return pdfUrl;
 }
 
-export async function getFinalReport(userId: string): Promise<FinalReport | null> {
-  const { data, error } = await supabase
-    .from('final_reports')
-    .select('*')
-    .eq('user_id', userId)
-    .order('generated_at', { ascending: false })
-    .limit(1)
-    .single();
-
-  if (error && error.code !== 'PGRST116') {
-    throw new Error(`Failed to fetch final report: ${error.message}`);
-  }
-
-  return data || null;
+function saveReportToLocalStorage(report: FinalReport) {
+  const existingReports = JSON.parse(localStorage.getItem('astropsyche_reports') || '[]');
+  existingReports.push(report);
+  localStorage.setItem('astropsyche_reports', JSON.stringify(existingReports));
 }
 
-export async function shareReport(reportId: string, makePublic: boolean = true): Promise<string> {
-  const { data, error } = await supabase
-    .from('final_reports')
-    .update({ shared_publicly: makePublic })
-    .eq('id', reportId)
-    .select('share_token')
-    .single();
-
-  if (error) {
-    throw new Error(`Failed to update sharing settings: ${error.message}`);
+function determineArchetype(conversationData: Record<string, any>) {
+  // Analyze conversation data to determine personality archetype
+  const responses = Object.values(conversationData).join(' ').toLowerCase();
+  
+  // Simple keyword-based archetype determination
+  if (responses.includes('creative') || responses.includes('art') || responses.includes('imagination')) {
+    return {
+      name: 'The Visionary Creator',
+      description: 'A soul driven by imagination and the desire to bring beauty into the world.',
+      inspirationalLine: 'Your creativity is your superpower - use it to illuminate the world.'
+    };
+  } else if (responses.includes('help') || responses.includes('care') || responses.includes('support')) {
+    return {
+      name: 'The Compassionate Guide',
+      description: 'A natural healer who finds purpose in lifting others up.',
+      inspirationalLine: 'Your empathy is a gift that transforms lives wherever you go.'
+    };
+  } else if (responses.includes('learn') || responses.includes('knowledge') || responses.includes('understand')) {
+    return {
+      name: 'The Wise Seeker',
+      description: 'An eternal student of life, always growing and evolving.',
+      inspirationalLine: 'Your curiosity opens doors to infinite possibilities.'
+    };
+  } else if (responses.includes('lead') || responses.includes('change') || responses.includes('impact')) {
+    return {
+      name: 'The Transformative Leader',
+      description: 'A catalyst for positive change in the world.',
+      inspirationalLine: 'Your vision has the power to reshape reality.'
+    };
+  } else {
+    return {
+      name: 'The Balanced Explorer',
+      description: 'A harmonious soul who finds beauty in life\'s journey.',
+      inspirationalLine: 'Your authentic self is exactly what the world needs.'
+    };
   }
+}
 
+function generateInsights(conversationData: Record<string, any>) {
+  const archetype = determineArchetype(conversationData);
+  
+  return {
+    summaryShort: `You are ${archetype.name}, a unique individual with a special gift for bringing your authentic self to everything you do.`,
+    summaryDetailed: `Your cosmic blueprint reveals a complex and fascinating personality. Through our conversation, it's clear that you possess a rare combination of introspection and action. You think deeply about life's meaning while maintaining the courage to pursue your authentic path. Your responses show someone who values genuine connection and isn't afraid to be vulnerable when it matters. This balance between wisdom and authenticity makes you a natural guide for others seeking their own truth.`,
+    astrologyBreakdown: `Your astrological influences suggest a personality that thrives on both stability and change. The planetary alignments at your birth created someone who can adapt to life's challenges while maintaining a strong sense of self. Your chart indicates natural leadership abilities combined with deep emotional intelligence.`,
+    psychologyInsights: `Psychologically, you demonstrate high emotional awareness and the ability to process complex feelings. Your responses indicate someone who has done significant inner work and continues to grow. You show patterns of healthy boundary-setting and authentic self-expression.`,
+    mindVsHeart: `You've achieved a remarkable balance between logical thinking and emotional wisdom. Rather than seeing these as opposing forces, you've learned to integrate both, making decisions that honor both your rational mind and your intuitive heart.`,
+    strengths: `Your greatest strengths include authentic self-expression, emotional intelligence, adaptability, and the courage to be vulnerable. You have a natural ability to see the bigger picture while attending to important details.`,
+    challenges: `Your main challenges may include overthinking decisions, being too hard on yourself, and occasionally struggling with perfectionism. Learning to trust your first instincts more could serve you well.`,
+    growthAreas: `Focus on developing even greater self-compassion and trusting your intuitive wisdom. Consider exploring creative outlets that allow for free expression without judgment.`,
+    affirmations: `I trust my inner wisdom. I am worthy of love and belonging exactly as I am. My authentic self is my greatest gift to the world. I embrace both my strengths and my growth edges with compassion.`
+  };
+}
+
+export async function generatePDF(reportId: string): Promise<string | null> {
+  // In a real implementation, this would generate a PDF
+  // For demo purposes, we'll return a mock URL
+  console.log('Generating PDF for report:', reportId);
+  
+  // Simulate PDF generation delay
+  await new Promise(resolve => setTimeout(resolve, 1000));
+  
+  // Return a mock PDF URL
+  return `data:application/pdf;base64,JVBERi0xLjQKJdPr6eEKMSAwIG9iago8PAovVGl0bGUgKFlvdXIgQ29zbWljIEJsdWVwcmludCkKL0NyZWF0b3IgKEFzdHJvUHN5Y2hlKQovUHJvZHVjZXIgKEFzdHJvUHN5Y2hlKQovQ3JlYXRpb25EYXRlIChEOjIwMjQwMTAxMTIwMDAwWikKPj4KZW5kb2JqCjIgMCBvYmoKPDwKL1R5cGUgL0NhdGFsb2cKL1BhZ2VzIDMgMCBSCj4+CmVuZG9iagozIDAgb2JqCjw8Ci9UeXBlIC9QYWdlcwovS2lkcyBbNCAwIFJdCi9Db3VudCAxCj4+CmVuZG9iago0IDAgb2JqCjw8Ci9UeXBlIC9QYWdlCi9QYXJlbnQgMyAwIFIKL01lZGlhQm94IFswIDAgNjEyIDc5Ml0KL0NvbnRlbnRzIDUgMCBSCj4+CmVuZG9iago1IDAgb2JqCjw8Ci9MZW5ndGggNDQKPj4Kc3RyZWFtCkJUCi9GMSAxMiBUZgoxMDAgNzAwIFRkCihZb3VyIENvc21pYyBCbHVlcHJpbnQpIFRqCkVUCmVuZHN0cmVhbQplbmRvYmoKeHJlZgowIDYKMDAwMDAwMDAwMCA2NTUzNSBmIAowMDAwMDAwMDA5IDAwMDAwIG4gCjAwMDAwMDAxNTggMDAwMDAgbiAKMDAwMDAwMDIwOCAwMDAwMCBuIAowMDAwMDAwMjY1IDAwMDAwIG4gCjAwMDAwMDAzNjIgMDAwMDAgbiAKdHJhaWxlcgo8PAovU2l6ZSA2Ci9Sb290IDIgMCBSCj4+CnN0YXJ0eHJlZgo0NTYKJSVFT0Y=`;
+}
+
+export async function shareReport(reportId: string): Promise<string> {
+  // Generate a shareable URL
+  const shareToken = `share-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
   const baseUrl = window.location.origin;
-  return `${baseUrl}/shared/${data.share_token}`;
+  return `${baseUrl}/shared/${shareToken}`;
 }

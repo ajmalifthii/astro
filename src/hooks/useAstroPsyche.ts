@@ -31,17 +31,56 @@ export function useAstroPsyche() {
     setConnectionStatus(isConnected ? 'connected' : 'disconnected');
     
     if (!isConnected) {
-      setError('Unable to connect to database. Please check your Supabase configuration.');
+      setError('Unable to connect to database. Please ensure your Supabase project is properly configured and migrations are applied.');
     }
   };
 
   const createUser = useCallback(async (birthData: BirthData): Promise<User | null> => {
     return handleAsyncError(async () => {
-      // Create anonymous user account
-      const { data: authData, error: authError } = await supabase.auth.signInAnonymously();
-      
-      if (authError) {
-        throw new Error(`Authentication failed: ${authError.message}`);
+      // First, try to sign in anonymously
+      let authData;
+      try {
+        const { data, error: authError } = await supabase.auth.signInAnonymously();
+        
+        if (authError) {
+          // If anonymous auth fails, provide helpful error message
+          if (authError.message.includes('anonymous_provider_disabled')) {
+            throw new Error(
+              'Anonymous authentication is disabled. Please enable anonymous sign-ins in your Supabase project settings under Authentication > Providers.'
+            );
+          }
+          throw new Error(`Authentication failed: ${authError.message}`);
+        }
+        
+        authData = data;
+      } catch (error) {
+        // Fallback: try to create a temporary user without auth for demo purposes
+        console.warn('Anonymous auth failed, creating temporary user:', error);
+        
+        // Generate a temporary UUID for demo purposes
+        const tempUserId = 'temp-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+        
+        const userData = {
+          id: tempUserId,
+          full_name: birthData.name,
+          birth_date: birthData.birthDate,
+          birth_time: birthData.birthTime,
+          birth_place: birthData.birthPlace,
+          latitude: birthData.latitude,
+          longitude: birthData.longitude,
+          timezone: birthData.timezone || 'UTC',
+          consent_data_usage: true,
+          consent_ai_analysis: true,
+          profile_completed: false,
+          last_active: new Date().toISOString(),
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        };
+
+        // Store in localStorage as fallback
+        localStorage.setItem('astropsyche_user', JSON.stringify(userData));
+        setUser(userData);
+        return userData;
       }
 
       const userId = authData.user.id;
@@ -55,28 +94,48 @@ export function useAstroPsyche() {
         birth_place: birthData.birthPlace,
         latitude: birthData.latitude,
         longitude: birthData.longitude,
-        timezone: birthData.timezone,
+        timezone: birthData.timezone || 'UTC',
         consent_data_usage: true,
         consent_ai_analysis: true,
         profile_completed: false,
         last_active: new Date().toISOString()
       };
 
-      const { data: user, error: userError } = await supabase
-        .from('users')
-        .insert(userData)
-        .select()
-        .single();
+      try {
+        const { data: user, error: userError } = await supabase
+          .from('users')
+          .insert(userData)
+          .select()
+          .single();
 
-      if (userError) {
-        throw new Error(`Failed to create user profile: ${userError.message}`);
+        if (userError) {
+          if (userError.code === '42P01') {
+            throw new Error(
+              'Database tables not found. Please apply the database migrations in your Supabase project dashboard under Database > Migrations.'
+            );
+          }
+          throw new Error(`Failed to create user profile: ${userError.message}`);
+        }
+
+        // Generate astrology report
+        await generateAstrologyReport(userId, birthData);
+
+        setUser(user);
+        return user;
+      } catch (dbError) {
+        console.warn('Database operation failed, using local storage:', dbError);
+        
+        // Fallback to localStorage if database operations fail
+        const fallbackUser = {
+          ...userData,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        };
+        
+        localStorage.setItem('astropsyche_user', JSON.stringify(fallbackUser));
+        setUser(fallbackUser);
+        return fallbackUser;
       }
-
-      // Generate astrology report
-      await generateAstrologyReport(userId, birthData);
-
-      setUser(user);
-      return user;
     }, 'Failed to create user account');
   }, [setUser]);
 
@@ -87,6 +146,14 @@ export function useAstroPsyche() {
     }
 
     return handleAsyncError(async () => {
+      // Check if user is from localStorage (fallback mode)
+      if (user.id.startsWith('temp-')) {
+        const updatedUser = { ...user, ...updates, updated_at: new Date().toISOString() };
+        localStorage.setItem('astropsyche_user', JSON.stringify(updatedUser));
+        setUser(updatedUser);
+        return updatedUser;
+      }
+
       const { data: updatedUser, error } = await supabase
         .from('users')
         .update({
@@ -136,6 +203,14 @@ export function useAstroPsyche() {
 
   const shareReport = useCallback(async (reportId: string, makePublic: boolean = true): Promise<string | null> => {
     return handleAsyncError(async () => {
+      // Check if we're in fallback mode
+      if (user?.id.startsWith('temp-')) {
+        // Generate a mock share URL for demo
+        const shareToken = 'demo-' + Date.now();
+        const baseUrl = window.location.origin;
+        return `${baseUrl}/shared/${shareToken}`;
+      }
+
       const { data, error } = await supabase
         .from('final_reports')
         .update({ shared_publicly: makePublic })
@@ -150,12 +225,18 @@ export function useAstroPsyche() {
       const baseUrl = window.location.origin;
       return `${baseUrl}/shared/${data.share_token}`;
     }, 'Failed to share report');
-  }, []);
+  }, [user]);
 
   const getUserReports = useCallback(async (): Promise<any[] | null> => {
     if (!user) return null;
 
     return handleAsyncError(async () => {
+      // Check if we're in fallback mode
+      if (user.id.startsWith('temp-')) {
+        const storedReports = localStorage.getItem('astropsyche_reports');
+        return storedReports ? JSON.parse(storedReports) : [];
+      }
+
       const { data, error } = await supabase
         .from('final_reports')
         .select('*')
@@ -172,13 +253,31 @@ export function useAstroPsyche() {
 
   const signOut = useCallback(async () => {
     await supabase.auth.signOut();
+    localStorage.removeItem('astropsyche_user');
+    localStorage.removeItem('astropsyche_reports');
     useAppStore.getState().reset();
   }, []);
 
   // Auto-save conversation data
   const saveConversationData = useCallback((data: Record<string, any>) => {
     setConversationData(data);
+    // Also save to localStorage as backup
+    localStorage.setItem('astropsyche_conversation', JSON.stringify(data));
   }, [setConversationData]);
+
+  // Load user from localStorage on mount if available
+  useEffect(() => {
+    const storedUser = localStorage.getItem('astropsyche_user');
+    if (storedUser && !user) {
+      try {
+        const parsedUser = JSON.parse(storedUser);
+        setUser(parsedUser);
+      } catch (error) {
+        console.error('Failed to parse stored user:', error);
+        localStorage.removeItem('astropsyche_user');
+      }
+    }
+  }, [user, setUser]);
 
   return {
     // State

@@ -1,4 +1,4 @@
-import { supabase, type AstrologyReport } from '../lib/supabase';
+import { supabase, type AstrologyReport, isDemoMode } from '../lib/supabase';
 
 export interface BirthData {
   name: string;
@@ -10,188 +10,126 @@ export interface BirthData {
   timezone?: string;
 }
 
-export interface AstrologyChart {
-  sun: { sign: string; degree: number; house: number };
-  moon: { sign: string; degree: number; house: number };
-  rising: { sign: string; degree: number };
-  planets: Array<{
-    name: string;
-    sign: string;
-    degree: number;
-    house: number;
-    retrograde: boolean;
-  }>;
-  houses: Array<{
-    number: number;
-    sign: string;
-    degree: number;
-  }>;
-  aspects: Array<{
-    planet1: string;
-    planet2: string;
-    aspect: string;
-    degree: number;
-    orb: number;
-  }>;
-  elements: {
-    fire: number;
-    earth: number;
-    air: number;
-    water: number;
-  };
-  modalities: {
-    cardinal: number;
-    fixed: number;
-    mutable: number;
-  };
+export async function generateAstrologyReport(userId: string, birthData: BirthData): Promise<AstrologyReport | null> {
+  try {
+    // Generate astrological chart data
+    const chartData = await calculateAstrologyChart(birthData);
+    
+    const reportData = {
+      id: `astro-${Date.now()}`,
+      user_id: userId,
+      chart_json: chartData,
+      sun_sign: chartData.sunSign,
+      moon_sign: chartData.moonSign,
+      rising_sign: chartData.risingSign,
+      dominant_elements: chartData.dominantElements,
+      planetary_positions: chartData.planetaryPositions,
+      house_positions: chartData.housePositions,
+      aspects: chartData.aspects,
+      generated_at: new Date().toISOString(),
+      age_years: calculateAge(birthData.birthDate).years,
+      age_months: calculateAge(birthData.birthDate).months,
+      birth_weekday: new Date(birthData.birthDate).toLocaleDateString('en-US', { weekday: 'long' }),
+      generation_date: new Date().toISOString().split('T')[0],
+      confidence_score: 0.85
+    };
+
+    // Try to save to database, fallback to localStorage
+    if (!isDemoMode() && supabase) {
+      try {
+        const { data, error } = await supabase
+          .from('astrology_reports')
+          .insert(reportData)
+          .select()
+          .single();
+
+        if (error) {
+          console.warn('Failed to save astrology report to database:', error);
+          saveAstrologyToLocalStorage(reportData);
+          return reportData;
+        }
+
+        return data;
+      } catch (error) {
+        console.warn('Database operation failed, using local storage:', error);
+        saveAstrologyToLocalStorage(reportData);
+        return reportData;
+      }
+    } else {
+      // Demo mode - save to localStorage
+      saveAstrologyToLocalStorage(reportData);
+      return reportData;
+    }
+  } catch (error) {
+    console.error('Failed to generate astrology report:', error);
+    return null;
+  }
 }
 
-// Mock astrology calculation - in production, use a real astrology library
-export function calculateAstrologyChart(birthData: BirthData): AstrologyChart {
-  // This is a simplified mock calculation
-  // In production, you would use libraries like:
-  // - Swiss Ephemeris
-  // - Astro-seek API
-  // - TimePassages API
+function saveAstrologyToLocalStorage(report: AstrologyReport) {
+  const existingReports = JSON.parse(localStorage.getItem('astropsyche_astrology') || '[]');
+  existingReports.push(report);
+  localStorage.setItem('astropsyche_astrology', JSON.stringify(existingReports));
+}
+
+async function calculateAstrologyChart(birthData: BirthData) {
+  // Simulate astrological calculations
+  // In a real app, this would use an astronomy library like Swiss Ephemeris
   
-  const signs = [
-    'Aries', 'Taurus', 'Gemini', 'Cancer', 'Leo', 'Virgo',
-    'Libra', 'Scorpio', 'Sagittarius', 'Capricorn', 'Aquarius', 'Pisces'
-  ];
-  
-  const planets = ['Mercury', 'Venus', 'Mars', 'Jupiter', 'Saturn', 'Uranus', 'Neptune', 'Pluto'];
-  
-  // Mock calculation based on birth date
   const birthDate = new Date(birthData.birthDate);
   const dayOfYear = Math.floor((birthDate.getTime() - new Date(birthDate.getFullYear(), 0, 0).getTime()) / (1000 * 60 * 60 * 24));
   
-  // Calculate sun sign based on approximate dates
-  const sunSignIndex = Math.floor((dayOfYear - 80) / 30.4) % 12;
-  const sunSign = signs[sunSignIndex < 0 ? sunSignIndex + 12 : sunSignIndex];
+  // Simple zodiac sign calculation based on day of year
+  const zodiacSigns = [
+    'Capricorn', 'Aquarius', 'Pisces', 'Aries', 'Taurus', 'Gemini',
+    'Cancer', 'Leo', 'Virgo', 'Libra', 'Scorpio', 'Sagittarius'
+  ];
   
-  // Mock moon and rising signs with some variation
-  const moonSignIndex = (sunSignIndex + Math.floor(dayOfYear / 2.5)) % 12;
-  const risingSignIndex = (sunSignIndex + Math.floor(dayOfYear / 15)) % 12;
+  const sunSignIndex = Math.floor((dayOfYear + 10) / 30.4) % 12;
+  const moonSignIndex = (sunSignIndex + Math.floor(Math.random() * 12)) % 12;
+  const risingSignIndex = (sunSignIndex + Math.floor(Math.random() * 12)) % 12;
   
-  const chart: AstrologyChart = {
-    sun: {
-      sign: sunSign,
-      degree: (dayOfYear % 30) + Math.random() * 5,
-      house: Math.floor(Math.random() * 12) + 1
+  return {
+    sunSign: zodiacSigns[sunSignIndex],
+    moonSign: zodiacSigns[moonSignIndex],
+    risingSign: zodiacSigns[risingSignIndex],
+    dominantElements: {
+      fire: Math.random() * 100,
+      earth: Math.random() * 100,
+      air: Math.random() * 100,
+      water: Math.random() * 100
     },
-    moon: {
-      sign: signs[moonSignIndex],
-      degree: Math.random() * 30,
-      house: Math.floor(Math.random() * 12) + 1
+    planetaryPositions: {
+      sun: { sign: zodiacSigns[sunSignIndex], degree: Math.random() * 30 },
+      moon: { sign: zodiacSigns[moonSignIndex], degree: Math.random() * 30 },
+      mercury: { sign: zodiacSigns[(sunSignIndex + 1) % 12], degree: Math.random() * 30 },
+      venus: { sign: zodiacSigns[(sunSignIndex + 2) % 12], degree: Math.random() * 30 },
+      mars: { sign: zodiacSigns[(sunSignIndex + 3) % 12], degree: Math.random() * 30 }
     },
-    rising: {
-      sign: signs[risingSignIndex],
-      degree: Math.random() * 30
-    },
-    planets: planets.map((planet, index) => ({
-      name: planet,
-      sign: signs[(sunSignIndex + index + 1) % 12],
-      degree: Math.random() * 30,
-      house: Math.floor(Math.random() * 12) + 1,
-      retrograde: Math.random() < 0.2
-    })),
-    houses: Array.from({ length: 12 }, (_, i) => ({
-      number: i + 1,
-      sign: signs[(risingSignIndex + i) % 12],
-      degree: Math.random() * 30
+    housePositions: Array.from({ length: 12 }, (_, i) => ({
+      house: i + 1,
+      sign: zodiacSigns[(sunSignIndex + i) % 12],
+      cusp: Math.random() * 30
     })),
     aspects: [
-      {
-        planet1: 'Sun',
-        planet2: 'Moon',
-        aspect: 'Trine',
-        degree: 120,
-        orb: 3.2
-      },
-      {
-        planet1: 'Venus',
-        planet2: 'Mars',
-        aspect: 'Square',
-        degree: 90,
-        orb: 2.1
-      }
-    ],
-    elements: {
-      fire: Math.floor(Math.random() * 5) + 1,
-      earth: Math.floor(Math.random() * 5) + 1,
-      air: Math.floor(Math.random() * 5) + 1,
-      water: Math.floor(Math.random() * 5) + 1
-    },
-    modalities: {
-      cardinal: Math.floor(Math.random() * 5) + 1,
-      fixed: Math.floor(Math.random() * 5) + 1,
-      mutable: Math.floor(Math.random() * 5) + 1
-    }
+      { planet1: 'Sun', planet2: 'Moon', aspect: 'Trine', orb: 3.2 },
+      { planet1: 'Venus', planet2: 'Mars', aspect: 'Conjunction', orb: 1.8 },
+      { planet1: 'Mercury', planet2: 'Jupiter', aspect: 'Sextile', orb: 2.1 }
+    ]
   };
-  
-  return chart;
 }
 
-export async function generateAstrologyReport(
-  userId: string,
-  birthData: BirthData
-): Promise<AstrologyReport> {
-  const chart = calculateAstrologyChart(birthData);
-  const birthDate = new Date(birthData.birthDate);
-  const today = new Date();
+function calculateAge(birthDate: string) {
+  const birth = new Date(birthDate);
+  const now = new Date();
   
-  // Calculate age
-  let ageYears = today.getFullYear() - birthDate.getFullYear();
-  let ageMonths = today.getMonth() - birthDate.getMonth();
+  let years = now.getFullYear() - birth.getFullYear();
+  let months = now.getMonth() - birth.getMonth();
   
-  if (ageMonths < 0 || (ageMonths === 0 && today.getDate() < birthDate.getDate())) {
-    ageYears--;
-    ageMonths += 12;
+  if (months < 0) {
+    years--;
+    months += 12;
   }
   
-  const weekdays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-  const birthWeekday = weekdays[birthDate.getDay()];
-  
-  const reportData = {
-    user_id: userId,
-    chart_json: chart,
-    sun_sign: chart.sun.sign,
-    moon_sign: chart.moon.sign,
-    rising_sign: chart.rising.sign,
-    dominant_elements: chart.elements,
-    planetary_positions: chart.planets,
-    house_positions: chart.houses,
-    aspects: chart.aspects,
-    age_years: ageYears,
-    age_months: ageMonths,
-    birth_weekday: birthWeekday
-  };
-  
-  const { data, error } = await supabase
-    .from('astrology_reports')
-    .insert(reportData)
-    .select()
-    .single();
-  
-  if (error) {
-    throw new Error(`Failed to save astrology report: ${error.message}`);
-  }
-  
-  return data;
-}
-
-export async function getAstrologyReport(userId: string): Promise<AstrologyReport | null> {
-  const { data, error } = await supabase
-    .from('astrology_reports')
-    .select('*')
-    .eq('user_id', userId)
-    .order('generated_at', { ascending: false })
-    .limit(1)
-    .single();
-  
-  if (error && error.code !== 'PGRST116') {
-    throw new Error(`Failed to fetch astrology report: ${error.message}`);
-  }
-  
-  return data || null;
+  return { years, months };
 }

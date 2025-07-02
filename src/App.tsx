@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronRight, Download, Share2, Brain, Sparkles, AlertCircle } from 'lucide-react';
+import { ChevronRight, Download, Share2, Brain, Sparkles, AlertCircle, Database, Wifi } from 'lucide-react';
 import * as THREE from 'three';
 import { useAstroPsyche } from './hooks/useAstroPsyche';
 import { ConversationalQuestionnaire } from './components/ConversationalQuestionnaire';
 import { generatePDF, shareReport } from './services/reportService';
+import { isDemoMode } from './lib/supabase';
 import type { BirthData } from './services/astrologyService';
 import type { FinalReport } from './lib/supabase';
 
@@ -309,8 +310,8 @@ const InputField = ({ value, onChange, name, type = "text", placeholder, icon })
 );
 
 // --- CONNECTION STATUS COMPONENT ---
-const ConnectionStatus = ({ status, onRetry }) => {
-    if (status === 'connected') return null;
+const ConnectionStatus = ({ status, onRetry, isDemo }) => {
+    if (status === 'connected' && !isDemo) return null;
 
     return (
         <motion.div
@@ -318,12 +319,17 @@ const ConnectionStatus = ({ status, onRetry }) => {
             animate={{ opacity: 1, y: 0 }}
             className="fixed top-4 left-1/2 -translate-x-1/2 z-50"
         >
-            <div className="bg-red-500/90 backdrop-blur-sm text-white px-4 py-2 rounded-lg flex items-center gap-2">
-                <AlertCircle size={16} />
+            <div className={`${isDemo ? 'bg-blue-500/90' : 'bg-red-500/90'} backdrop-blur-sm text-white px-4 py-2 rounded-lg flex items-center gap-2`}>
+                {isDemo ? <Database size={16} /> : <AlertCircle size={16} />}
                 <span className="text-sm">
-                    {status === 'checking' ? 'Checking connection...' : 'Database connection failed'}
+                    {isDemo 
+                        ? 'Running in demo mode - data stored locally' 
+                        : status === 'checking' 
+                            ? 'Checking connection...' 
+                            : 'Database connection failed'
+                    }
                 </span>
-                {status === 'disconnected' && (
+                {status === 'disconnected' && !isDemo && (
                     <button
                         onClick={onRetry}
                         className="ml-2 text-xs bg-white/20 px-2 py-1 rounded hover:bg-white/30 transition-colors"
@@ -423,7 +429,8 @@ const BirthDataPage = ({ onNext, formStep, setFormStep, backgroundRef }) => {
                 birthTime: formData.time,
                 birthPlace: formData.location?.name || 'Unknown',
                 latitude: formData.location?.lat || 0,
-                longitude: formData.location?.lon || 0
+                longitude: formData.location?.lon || 0,
+                timezone: 'UTC'
             };
 
             await createUser(birthData);
@@ -432,6 +439,7 @@ const BirthDataPage = ({ onNext, formStep, setFormStep, backgroundRef }) => {
                 if (backgroundRef?.current?.stopLoading) {
                     backgroundRef.current.stopLoading();
                 }
+                setLoading(false);
                 onNext();
             }, 2000);
         } catch (error) {
@@ -512,6 +520,11 @@ const BirthDataPage = ({ onNext, formStep, setFormStep, backgroundRef }) => {
                 </PrimaryButton>
                 <p className="text-xs text-white/40 mt-2">Press Enter to continue</p>
             </div>
+            {error && (
+                <div className="mt-4 p-3 bg-red-500/20 border border-red-500/30 rounded-lg">
+                    <p className="text-red-300 text-sm">{error}</p>
+                </div>
+            )}
         </motion.div>
     ];
 
@@ -521,7 +534,11 @@ const BirthDataPage = ({ onNext, formStep, setFormStep, backgroundRef }) => {
                 <Sparkles className="animate-spin mb-4" size={48} />
                 <p className="mt-8 text-lg text-white/80">Setting up your cosmic profile...</p>
                 <p className="text-sm text-white/60 mt-2">Calculating astrological chart</p>
-                {error && <p className="text-red-400 mt-4">{error}</p>}
+                {error && (
+                    <div className="mt-4 p-3 bg-red-500/20 border border-red-500/30 rounded-lg max-w-md">
+                        <p className="text-red-300 text-sm">{error}</p>
+                    </div>
+                )}
             </motion.div>
         );
     }
@@ -602,7 +619,7 @@ const FinalReportPage = ({ onRestart, user }) => {
     const handleShare = async () => {
         if (!report) return;
         try {
-            const shareUrl = `${window.location.origin}/shared/${report.share_token}`;
+            const shareUrl = await shareReport(report.id);
             if (navigator.share) {
                 await navigator.share({
                     title: 'My Cosmic Blueprint - AstroPsyche',
@@ -615,6 +632,10 @@ const FinalReportPage = ({ onRestart, user }) => {
             }
         } catch (error) {
             console.error('Failed to share:', error);
+            // Fallback - just copy a demo URL
+            const demoUrl = `${window.location.origin}/shared/demo-${Date.now()}`;
+            await navigator.clipboard.writeText(demoUrl);
+            alert('Demo share link copied to clipboard!');
         }
     };
 
@@ -731,6 +752,7 @@ export default function App() {
     const [formStep, setFormStep] = useState(0);
     const backgroundRef = useRef(null);
     const { user, connectionStatus, checkConnection } = useAstroPsyche();
+    const isDemo = isDemoMode();
 
     const nextAppStep = () => {
         setAppStep(prev => prev + 1);
@@ -752,7 +774,11 @@ export default function App() {
     return (
         <main className="h-screen w-screen bg-black font-sans overflow-hidden">
             <ThreeBackground ref={backgroundRef} appStep={appStep} formStep={formStep} />
-            <ConnectionStatus status={connectionStatus} onRetry={checkConnection} />
+            <ConnectionStatus 
+                status={connectionStatus} 
+                onRetry={checkConnection} 
+                isDemo={isDemo}
+            />
             <div className="relative z-10 h-full w-full">
                 <AnimatePresence mode="wait">
                     {pages[appStep]}

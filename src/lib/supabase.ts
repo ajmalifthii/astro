@@ -5,24 +5,23 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 // Validate environment variables
 if (!supabaseUrl || !supabaseAnonKey) {
-  throw new Error('Missing Supabase environment variables. Please check your .env file.');
+  console.error('Missing Supabase environment variables. The app will run in demo mode.');
 }
 
 // Validate URL format
-if (supabaseUrl === 'your_supabase_project_url' || !supabaseUrl.startsWith('https://')) {
-  throw new Error(
-    'Invalid Supabase URL. Please set VITE_SUPABASE_URL to your actual Supabase project URL (e.g., https://your-project-ref.supabase.co) in your .env file.'
-  );
+if (supabaseUrl && (supabaseUrl === 'your_supabase_project_url' || !supabaseUrl.startsWith('https://'))) {
+  console.error('Invalid Supabase URL. Please set VITE_SUPABASE_URL to your actual Supabase project URL.');
 }
 
 // Validate anon key format
-if (supabaseAnonKey === 'your_supabase_anon_key' || supabaseAnonKey.length < 100) {
-  throw new Error(
-    'Invalid Supabase anon key. Please set VITE_SUPABASE_ANON_KEY to your actual Supabase anon key in your .env file.'
-  );
+if (supabaseAnonKey && (supabaseAnonKey === 'your_supabase_anon_key' || supabaseAnonKey.length < 100)) {
+  console.error('Invalid Supabase anon key. Please set VITE_SUPABASE_ANON_KEY to your actual Supabase anon key.');
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+// Create Supabase client with error handling
+export const supabase = supabaseUrl && supabaseAnonKey 
+  ? createClient(supabaseUrl, supabaseAnonKey)
+  : null;
 
 // Enhanced database types with better organization
 export interface User {
@@ -151,12 +150,34 @@ export class SupabaseError extends Error {
   }
 }
 
-// Connection health check
+// Connection health check with better error handling
 export async function checkSupabaseConnection(): Promise<boolean> {
-  try {
-    const { data, error } = await supabase.from('users').select('count').limit(1);
-    return !error;
-  } catch {
+  if (!supabase) {
+    console.warn('Supabase client not initialized. Running in demo mode.');
     return false;
   }
+
+  try {
+    // Try to query a simple table to check connection
+    const { data, error } = await supabase.from('users').select('count').limit(1);
+    
+    if (error) {
+      if (error.code === '42P01') {
+        console.error('Database tables not found. Please apply migrations in your Supabase project.');
+        return false;
+      }
+      console.error('Supabase connection error:', error);
+      return false;
+    }
+    
+    return true;
+  } catch (error) {
+    console.error('Failed to connect to Supabase:', error);
+    return false;
+  }
+}
+
+// Helper function to check if we're in demo mode
+export function isDemoMode(): boolean {
+  return !supabase || !supabaseUrl || !supabaseAnonKey;
 }
