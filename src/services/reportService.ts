@@ -1,0 +1,221 @@
+import { supabase, type FinalReport } from '../lib/supabase';
+import { aiService, type PersonalityAnalysis } from './aiService';
+import { getAstrologyReport } from './astrologyService';
+import { getUserPsychResponses } from './psychologyService';
+import jsPDF from 'jspdf';
+
+export async function generateFinalReport(userId: string, sessionId: string): Promise<FinalReport> {
+  try {
+    // Fetch all required data
+    const [astrologyReport, psychResponses] = await Promise.all([
+      getAstrologyReport(userId),
+      getUserPsychResponses(userId, sessionId)
+    ]);
+
+    if (!astrologyReport) {
+      throw new Error('Astrology report not found');
+    }
+
+    if (psychResponses.length === 0) {
+      throw new Error('No psychology responses found');
+    }
+
+    // Generate AI analysis
+    const analysis = await aiService.generatePersonalityAnalysis(
+      userId,
+      astrologyReport,
+      psychResponses
+    );
+
+    // Create final report
+    const reportData = {
+      user_id: userId,
+      report_title: `Cosmic Blueprint for ${astrologyReport.chart_json.sun.sign} Soul`,
+      archetype_name: analysis.archetype.name,
+      archetype_description: analysis.archetype.description,
+      inspirational_line: analysis.archetype.inspirationalLine,
+      summary_short: analysis.summaryShort,
+      summary_detailed: analysis.summaryDetailed,
+      astrology_breakdown: analysis.astrologyBreakdown,
+      psychology_insights: analysis.psychologyInsights,
+      mind_vs_heart: analysis.mindVsHeart,
+      strengths: analysis.archetype.strengths.join(', '),
+      challenges: analysis.archetype.challenges.join(', '),
+      growth_areas: analysis.archetype.growthAreas.join(', '),
+      affirmations: analysis.affirmations,
+      pdf_generated: false,
+      shared_publicly: false
+    };
+
+    const { data: report, error } = await supabase
+      .from('final_reports')
+      .insert(reportData)
+      .select()
+      .single();
+
+    if (error) {
+      throw new Error(`Failed to save final report: ${error.message}`);
+    }
+
+    return report;
+  } catch (error) {
+    console.error('Error generating final report:', error);
+    throw error;
+  }
+}
+
+export async function generatePDF(reportId: string): Promise<string> {
+  const { data: report, error } = await supabase
+    .from('final_reports')
+    .select('*')
+    .eq('id', reportId)
+    .single();
+
+  if (error || !report) {
+    throw new Error('Report not found');
+  }
+
+  // Create PDF
+  const pdf = new jsPDF();
+  const pageWidth = pdf.internal.pageSize.getWidth();
+  const margin = 20;
+  const lineHeight = 7;
+  let yPosition = 30;
+
+  // Helper function to add text with word wrapping
+  const addWrappedText = (text: string, fontSize: number = 11, isBold: boolean = false) => {
+    pdf.setFontSize(fontSize);
+    if (isBold) {
+      pdf.setFont(undefined, 'bold');
+    } else {
+      pdf.setFont(undefined, 'normal');
+    }
+    
+    const lines = pdf.splitTextToSize(text, pageWidth - 2 * margin);
+    lines.forEach((line: string) => {
+      if (yPosition > pdf.internal.pageSize.getHeight() - 30) {
+        pdf.addPage();
+        yPosition = 30;
+      }
+      pdf.text(line, margin, yPosition);
+      yPosition += lineHeight;
+    });
+    yPosition += 3; // Extra spacing after paragraphs
+  };
+
+  // Title
+  pdf.setFontSize(24);
+  pdf.setFont(undefined, 'bold');
+  pdf.setTextColor(128, 0, 128);
+  pdf.text('Your Cosmic Blueprint', pageWidth / 2, 20, { align: 'center' });
+
+  yPosition = 40;
+
+  // Archetype
+  pdf.setTextColor(0, 0, 0);
+  addWrappedText(`Archetype: ${report.archetype_name}`, 18, true);
+  
+  if (report.inspirational_line) {
+    pdf.setTextColor(100, 100, 100);
+    addWrappedText(`"${report.inspirational_line}"`, 12);
+    pdf.setTextColor(0, 0, 0);
+  }
+
+  yPosition += 5;
+
+  // Summary
+  addWrappedText('Core Insights', 14, true);
+  addWrappedText(report.summary_detailed);
+
+  // Astrology Breakdown
+  if (report.astrology_breakdown) {
+    addWrappedText('Astrological Foundation', 14, true);
+    addWrappedText(report.astrology_breakdown);
+  }
+
+  // Psychology Insights
+  if (report.psychology_insights) {
+    addWrappedText('Psychological Patterns', 14, true);
+    addWrappedText(report.psychology_insights);
+  }
+
+  // Mind vs Heart
+  if (report.mind_vs_heart) {
+    addWrappedText('Mind vs. Heart', 14, true);
+    addWrappedText(report.mind_vs_heart);
+  }
+
+  // Strengths & Challenges
+  if (report.strengths) {
+    addWrappedText('Your Strengths', 14, true);
+    addWrappedText(report.strengths);
+  }
+
+  if (report.challenges) {
+    addWrappedText('Growth Opportunities', 14, true);
+    addWrappedText(report.challenges);
+  }
+
+  // Affirmations
+  if (report.affirmations) {
+    addWrappedText('Personal Affirmations', 14, true);
+    pdf.setTextColor(128, 0, 128);
+    addWrappedText(report.affirmations);
+  }
+
+  // Footer
+  pdf.setTextColor(150, 150, 150);
+  pdf.setFontSize(8);
+  pdf.text('Generated by AstroPsyche', pageWidth / 2, pdf.internal.pageSize.getHeight() - 10, { align: 'center' });
+
+  // Convert to blob and upload (in a real app, you'd upload to cloud storage)
+  const pdfBlob = pdf.output('blob');
+  const pdfUrl = URL.createObjectURL(pdfBlob);
+
+  // Update report with PDF URL
+  const { error: updateError } = await supabase
+    .from('final_reports')
+    .update({ 
+      pdf_url: pdfUrl, 
+      pdf_generated: true 
+    })
+    .eq('id', reportId);
+
+  if (updateError) {
+    console.error('Failed to update report with PDF URL:', updateError);
+  }
+
+  return pdfUrl;
+}
+
+export async function getFinalReport(userId: string): Promise<FinalReport | null> {
+  const { data, error } = await supabase
+    .from('final_reports')
+    .select('*')
+    .eq('user_id', userId)
+    .order('generated_at', { ascending: false })
+    .limit(1)
+    .single();
+
+  if (error && error.code !== 'PGRST116') {
+    throw new Error(`Failed to fetch final report: ${error.message}`);
+  }
+
+  return data || null;
+}
+
+export async function shareReport(reportId: string, makePublic: boolean = true): Promise<string> {
+  const { data, error } = await supabase
+    .from('final_reports')
+    .update({ shared_publicly: makePublic })
+    .eq('id', reportId)
+    .select('share_token')
+    .single();
+
+  if (error) {
+    throw new Error(`Failed to update sharing settings: ${error.message}`);
+  }
+
+  const baseUrl = window.location.origin;
+  return `${baseUrl}/shared/${data.share_token}`;
+}

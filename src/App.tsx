@@ -1,10 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronRight, Download, Mic, Share2, Type, User, Calendar, Clock, MapPin, Check } from 'lucide-react';
+import { ChevronRight, Download, Mic, Share2, Type, User, Calendar, Clock, MapPin, Check, Brain, Sparkles } from 'lucide-react';
 import * as THREE from 'three';
-import jsPDF from 'jspdf';
+import { useAstroPsyche } from './hooks/useAstroPsyche';
+import { PsychologyQuestionnaire } from './components/PsychologyQuestionnaire';
+import { generatePDF, shareReport } from './services/reportService';
+import type { BirthData } from './services/astrologyService';
+import type { PsychAnswer } from './services/psychologyService';
+import type { FinalReport } from './lib/supabase';
 
-// --- 3D Background Component ---
+// --- 3D Background Component (unchanged) ---
 const ThreeBackground = ({ appStep, formStep }) => {
     const mountRef = useRef(null);
     const threeObjects = useRef({});
@@ -67,7 +72,7 @@ const ThreeBackground = ({ appStep, formStep }) => {
         // --- Enhanced Planet Creation ---
         function createPlanet(size, textureUrl, distance, orbitSpeed, name) {
             const texture = textureLoader.load(textureUrl, undefined, undefined, onTextureError);
-            const geometry = new THREE.SphereGeometry(size, 64, 64); // Higher resolution for perfect spheres
+            const geometry = new THREE.SphereGeometry(size, 64, 64);
             const material = new THREE.MeshPhongMaterial({ 
                 map: texture, 
                 shininess: 5,
@@ -88,7 +93,6 @@ const ThreeBackground = ({ appStep, formStep }) => {
 
         const textureBaseUrl = 'https://raw.githubusercontent.com/jeromeetienne/threex.planets/master/images/';
         
-        // Only the 5 requested planets: Venus, Earth, Mars, Jupiter, Saturn
         const planets = [
             createPlanet(1.2, `${textureBaseUrl}venusmap.jpg`, 22, 0.02, 'Venus'),
             createPlanet(1.3, `${textureBaseUrl}earthmap1k.jpg`, 32, 0.01, 'Earth'),
@@ -115,14 +119,12 @@ const ThreeBackground = ({ appStep, formStep }) => {
         const stars = new THREE.Points(starGeometry, starMaterial);
         scene.add(stars);
 
-        // Store all necessary objects in the ref
         threeObjects.current = {
             scene, camera, renderer, planets, sun, cameraTarget, cameraPosition,
             isAnimating: false,
-            currentTargetIndex: -1, // -1 for default view, 0-4 for planets
+            currentTargetIndex: -1,
             orbitAngle: 0,
-            isLoading: false,
-            loadingSpeed: 0
+            isLoading: false
         };
 
         // --- Enhanced Animation Loop ---
@@ -132,12 +134,11 @@ const ThreeBackground = ({ appStep, formStep }) => {
             const { 
                 isAnimating, currentTargetIndex, planets, sun, camera, 
                 cameraTarget, cameraPosition, renderer, scene, orbitAngle,
-                isLoading, loadingSpeed
+                isLoading
             } = threeObjects.current;
             
             if (!renderer) return;
 
-            // Animate planets
             planets.forEach(p => {
                 p.orbit.rotation.y += p.orbitSpeed;
                 p.mesh.rotation.y += 0.005;
@@ -145,14 +146,13 @@ const ThreeBackground = ({ appStep, formStep }) => {
             
             sun.rotation.y += 0.001;
 
-            // Handle loading animation with fast orbiting
             if (isLoading) {
                 const currentPlanet = planets[Math.min(currentTargetIndex, planets.length - 1)];
                 if (currentPlanet) {
                     const worldPosition = new THREE.Vector3();
                     currentPlanet.mesh.getWorldPosition(worldPosition);
                     
-                    const fastOrbitAngle = Date.now() * 0.01; // Fast orbit
+                    const fastOrbitAngle = Date.now() * 0.01;
                     const orbitRadius = currentPlanet.distance * 0.3;
                     
                     const orbitX = worldPosition.x + Math.cos(fastOrbitAngle) * orbitRadius;
@@ -162,15 +162,12 @@ const ThreeBackground = ({ appStep, formStep }) => {
                     camera.position.set(orbitX, orbitY, orbitZ);
                     camera.lookAt(worldPosition);
                 }
-            }
-            // Handle normal camera animation
-            else if (isAnimating) {
+            } else if (isAnimating) {
                 if (currentTargetIndex >= 0 && currentTargetIndex < planets.length) {
                     const targetPlanet = planets[currentTargetIndex];
                     const worldPosition = new THREE.Vector3();
                     targetPlanet.mesh.getWorldPosition(worldPosition);
                     
-                    // Smooth orbit around the target planet
                     threeObjects.current.orbitAngle += 0.005;
                     const orbitRadius = targetPlanet.mesh.geometry.parameters.radius * 6;
                     const orbitHeight = targetPlanet.mesh.geometry.parameters.radius * 3;
@@ -189,7 +186,6 @@ const ThreeBackground = ({ appStep, formStep }) => {
                         threeObjects.current.isAnimating = false;
                     }
                 } else {
-                    // Default wide view
                     const defaultPos = new THREE.Vector3(0, 40, 100);
                     const defaultTarget = new THREE.Vector3(0, 0, 0);
                     
@@ -207,7 +203,6 @@ const ThreeBackground = ({ appStep, formStep }) => {
         };
         animate();
 
-        // --- Handle Window Resize ---
         const handleResize = () => {
             if (!threeObjects.current.camera || !threeObjects.current.renderer) return;
             threeObjects.current.camera.aspect = currentMount.clientWidth / currentMount.clientHeight;
@@ -216,7 +211,6 @@ const ThreeBackground = ({ appStep, formStep }) => {
         };
         window.addEventListener('resize', handleResize);
 
-        // --- Cleanup ---
         return () => {
             window.removeEventListener('resize', handleResize);
             cancelAnimationFrame(animationFrameId);
@@ -241,10 +235,9 @@ const ThreeBackground = ({ appStep, formStep }) => {
         };
     }, []);
 
-    // Handle camera movement based on app state
     useEffect(() => {
         const planetSequence = [
-            -1, // Landing Page (Default Wide)
+            -1, // Landing Page
             0,  // Venus - Form Step 0
             1,  // Earth - Form Step 1 
             2,  // Mars - Form Step 2
@@ -255,9 +248,9 @@ const ThreeBackground = ({ appStep, formStep }) => {
             2,  // Mars - Final Report
         ];
         
-        let targetIndex = -1; // Default view
+        let targetIndex = -1;
         
-        if (appStep === 1) { // BirthDataPage
+        if (appStep === 1) {
             targetIndex = planetSequence[1 + formStep] ?? -1;
         } else if (appStep > 1) {
             targetIndex = planetSequence[5 + appStep - 1] ?? -1;
@@ -268,11 +261,10 @@ const ThreeBackground = ({ appStep, formStep }) => {
         if (threeObjects.current && threeObjects.current.isAnimating !== undefined) {
             threeObjects.current.isAnimating = true;
             threeObjects.current.currentTargetIndex = targetIndex;
-            threeObjects.current.orbitAngle = 0; // Reset orbit angle for smooth transition
+            threeObjects.current.orbitAngle = 0;
         }
     }, [appStep, formStep]);
 
-    // Expose loading control
     useEffect(() => {
         if (threeObjects.current) {
             threeObjects.current.startLoading = () => {
@@ -285,36 +277,6 @@ const ThreeBackground = ({ appStep, formStep }) => {
     }, []);
 
     return <div ref={mountRef} className="absolute inset-0 z-0" />;
-};
-
-// --- MOCK DATA & HELPERS ---
-const MOCK_ARCHETYPE = {
-    name: "The Star-Weaver",
-    blend: "Aries Sun, Cancer Moon",
-    inspirationalLine: "You weave light from chaos and find home in the journey."
-};
-
-const MOCK_REPORT = {
-    summary: "A dynamic and emotionally intuitive individual, you are driven by a pioneering spirit yet find deep comfort in connection and security. Your core challenge is balancing your desire for action with your need for emotional nourishment.",
-    fullReport: {
-        astrology: "Your Aries Sun fuels your ambition and courage, making you a natural leader. However, your Cancer Moon provides a sensitive, nurturing core. This combination can lead to internal friction but also immense creative potential.",
-        psychology: "Your responses indicate a high degree of self-awareness and a tendency towards introspection. You value authenticity and are not afraid to confront difficult truths.",
-        mindVsHeart: "There is a notable tension between your logical mind and your emotional world. You often try to rationalize your feelings, but your heart ultimately guides your most important decisions.",
-        affirmation: "I honor both the fire that drives me and the water that sustains me. My power lies in their union."
-    }
-};
-
-const calculateAge = (dob) => {
-    if (!dob) return null;
-    const birthDate = new Date(dob);
-    const today = new Date();
-    let years = today.getFullYear() - birthDate.getFullYear();
-    let months = today.getMonth() - birthDate.getMonth();
-    if (months < 0 || (months === 0 && today.getDate() < birthDate.getDate())) {
-        years--;
-        months += 12;
-    }
-    return { years, months };
 };
 
 // --- UI COMPONENTS ---
@@ -352,7 +314,6 @@ const InputField = ({ value, onChange, name, type = "text", placeholder, icon })
 
 // --- PAGE COMPONENTS ---
 const LandingPage = ({ onNext }) => {
-    // Add keyboard event listener
     useEffect(() => {
         const handleKeyPress = (e) => {
             if (e.key === 'Enter') {
@@ -406,6 +367,7 @@ const BirthDataPage = ({ onNext, formStep, setFormStep, backgroundRef }) => {
         locationInput: ''
     });
     const [loading, setLoading] = useState(false);
+    const { createUser, isLoading, error } = useAstroPsyche();
 
     const nextFormStep = () => setFormStep(prev => prev + 1);
 
@@ -423,6 +385,19 @@ const BirthDataPage = ({ onNext, formStep, setFormStep, backgroundRef }) => {
         }
     }, [formStep]);
 
+    const calculateAge = (dob) => {
+        if (!dob) return null;
+        const birthDate = new Date(dob);
+        const today = new Date();
+        let years = today.getFullYear() - birthDate.getFullYear();
+        let months = today.getMonth() - birthDate.getMonth();
+        if (months < 0 || (months === 0 && today.getDate() < birthDate.getDate())) {
+            years--;
+            months += 12;
+        }
+        return { years, months };
+    };
+
     const handleDobSubmit = () => {
         const age = calculateAge(formData.dob);
         setFormData(prev => ({ ...prev, age }));
@@ -430,25 +405,50 @@ const BirthDataPage = ({ onNext, formStep, setFormStep, backgroundRef }) => {
     };
     
     const handleLocationSelect = () => {
-        setFormData(prev => ({ ...prev, location: { name: formData.locationInput || 'Eiffel Tower, Paris', lat: 48.8584, lon: 2.2945 } }));
+        setFormData(prev => ({ 
+            ...prev, 
+            location: { 
+                name: formData.locationInput || 'Paris, France', 
+                lat: 48.8584, 
+                lon: 2.2945 
+            } 
+        }));
         nextFormStep();
     };
 
-    const handleSubmit = () => {
+    const handleSubmit = async () => {
         setLoading(true);
-        // Start loading animation in 3D background
         if (backgroundRef?.current?.startLoading) {
             backgroundRef.current.startLoading();
         }
-        setTimeout(() => {
+
+        try {
+            const birthData: BirthData = {
+                name: formData.name,
+                birthDate: formData.dob,
+                birthTime: formData.time,
+                birthPlace: formData.location?.name || 'Unknown',
+                latitude: formData.location?.lat || 0,
+                longitude: formData.location?.lon || 0
+            };
+
+            await createUser(birthData);
+            
+            setTimeout(() => {
+                if (backgroundRef?.current?.stopLoading) {
+                    backgroundRef.current.stopLoading();
+                }
+                onNext();
+            }, 2000);
+        } catch (error) {
+            console.error('Failed to create user:', error);
+            setLoading(false);
             if (backgroundRef?.current?.stopLoading) {
                 backgroundRef.current.stopLoading();
             }
-            onNext();
-        }, 3000);
+        }
     };
 
-    // Keyboard event handlers
     useEffect(() => {
         const handleKeyPress = (e) => {
             if (e.key === 'Enter') {
@@ -519,7 +519,7 @@ const BirthDataPage = ({ onNext, formStep, setFormStep, backgroundRef }) => {
         <motion.div key="location" {...motionProps} className="w-full flex flex-col items-center">
             <h2 className="text-2xl font-bold text-white mb-6 text-center">Where were you born?</h2>
             <InputField name="locationInput" placeholder="City, Country (e.g., Paris, France)" icon={<MapPin size={18} />} value={formData.locationInput} onChange={handleInputChange} />
-            <p className="text-xs text-white/50 mt-2">Simulating Google Places Autocomplete</p>
+            <p className="text-xs text-white/50 mt-2">Simulating location lookup</p>
             <div className="mt-8 flex flex-col items-center">
                 <PrimaryButton onClick={handleLocationSelect} disabled={!formData.locationInput}>Select Location</PrimaryButton>
                 <p className="text-xs text-white/40 mt-2">Press Enter to continue</p>
@@ -541,17 +541,21 @@ const BirthDataPage = ({ onNext, formStep, setFormStep, backgroundRef }) => {
                 <p className="text-sm text-white/60">Lat: {formData.location?.lat}, Lon: {formData.location?.lon}</p>
              </div>
              <div className="mt-6 flex flex-col items-center">
-                <PrimaryButton onClick={handleSubmit}><Check className="inline-block mr-2"/> Confirm & Generate</PrimaryButton>
+                <PrimaryButton onClick={handleSubmit} disabled={loading || isLoading}>
+                    <Check className="inline-block mr-2"/> {loading || isLoading ? 'Generating...' : 'Confirm & Generate'}
+                </PrimaryButton>
                 <p className="text-xs text-white/40 mt-2">Press Enter to continue</p>
              </div>
         </motion.div>
     ];
 
-    if (loading) {
+    if (loading || isLoading) {
         return (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="h-full w-full flex flex-col items-center justify-center text-white p-4">
+                <Sparkles className="animate-spin mb-4" size={48} />
                 <p className="mt-8 text-lg text-white/80">Aligning the cosmos...</p>
-                <p className="text-sm text-white/60 mt-2">Camera orbiting around celestial bodies</p>
+                <p className="text-sm text-white/60 mt-2">Generating your astrological chart</p>
+                {error && <p className="text-red-400 mt-4">{error}</p>}
             </motion.div>
         );
     }
@@ -567,10 +571,9 @@ const BirthDataPage = ({ onNext, formStep, setFormStep, backgroundRef }) => {
     );
 };
 
-const ReportPreviewPage = ({ onNext }) => {
+const ReportPreviewPage = ({ onNext, user }) => {
     const [activeTab, setActiveTab] = useState('simple');
 
-    // Keyboard event handlers
     useEffect(() => {
         const handleKeyPress = (e) => {
             if (e.key === 'Enter') {
@@ -584,6 +587,20 @@ const ReportPreviewPage = ({ onNext }) => {
         window.addEventListener('keydown', handleKeyPress);
         return () => window.removeEventListener('keydown', handleKeyPress);
     }, [onNext]);
+
+    const mockArchetype = {
+        name: "The Cosmic Navigator",
+        blend: "Exploring the intersection of mind and spirit",
+        inspirationalLine: "You chart courses through both inner and outer worlds with equal grace."
+    };
+
+    const mockReport = {
+        summary: "Your astrological chart reveals a complex individual who balances analytical thinking with intuitive wisdom. You possess a natural ability to see patterns and connections that others miss, making you both a visionary and a practical problem-solver.",
+        fullReport: {
+            astrology: "Your planetary placements suggest someone who thinks deeply about life's mysteries while maintaining a grounded approach to daily challenges. There's a beautiful tension between your desire for adventure and your need for security.",
+            psychology: "Your responses indicate high emotional intelligence and a tendency toward introspection. You value authenticity and are not afraid to explore the deeper aspects of your personality."
+        }
+    };
 
     return (
         <motion.div
@@ -600,9 +617,9 @@ const ReportPreviewPage = ({ onNext }) => {
                     transition={{ delay: 0.2, duration: 0.5 }}
                     className="text-center mb-6"
                 >
-                    <h3 className="text-2xl font-bold text-purple-300">{MOCK_ARCHETYPE.name}</h3>
-                    <p className="text-white/70">{MOCK_ARCHETYPE.blend}</p>
-                    <p className="text-lg mt-2 italic">"{MOCK_ARCHETYPE.inspirationalLine}"</p>
+                    <h3 className="text-2xl font-bold text-purple-300">{mockArchetype.name}</h3>
+                    <p className="text-white/70">{mockArchetype.blend}</p>
+                    <p className="text-lg mt-2 italic">"{mockArchetype.inspirationalLine}"</p>
                 </motion.div>
 
                 <div className="flex justify-center border-b border-white/20 mb-4">
@@ -620,16 +637,16 @@ const ReportPreviewPage = ({ onNext }) => {
                             transition={{ duration: 0.4 }}
                         >
                             {activeTab === 'simple' ? (
-                                <p className="text-white/90 leading-relaxed">{MOCK_REPORT.summary}</p>
+                                <p className="text-white/90 leading-relaxed">{mockReport.summary}</p>
                             ) : (
                                 <div className="space-y-4">
                                     <div>
                                         <h4 className="font-bold text-purple-300 mb-1">Astrology Breakdown</h4>
-                                        <p className="text-white/90 leading-relaxed text-sm">{MOCK_REPORT.fullReport.astrology}</p>
+                                        <p className="text-white/90 leading-relaxed text-sm">{mockReport.fullReport.astrology}</p>
                                     </div>
                                     <div>
                                         <h4 className="font-bold text-purple-300 mb-1">Psychological Insights</h4>
-                                        <p className="text-white/90 leading-relaxed text-sm">{MOCK_REPORT.fullReport.psychology}</p>
+                                        <p className="text-white/90 leading-relaxed text-sm">{mockReport.fullReport.psychology}</p>
                                     </div>
                                 </div>
                             )}
@@ -648,168 +665,101 @@ const ReportPreviewPage = ({ onNext }) => {
     );
 };
 
-const PsychQAPage = ({ onNext }) => {
-    const [mode, setMode] = useState('text');
-    const [question, setQuestion] = useState("What is a challenge you're currently proud of overcoming?");
-    const [answer, setAnswer] = useState('');
-    const [isRecording, setIsRecording] = useState(false);
+const PsychQAPage = ({ onNext, user }) => {
+    const { startPsychologySession, submitPsychAnswer, currentSession, isLoading } = useAstroPsyche();
+    const [sessionStarted, setSessionStarted] = useState(false);
 
-    const handleNextQuestion = () => {
-        setQuestion("Describe a time you felt most aligned with your purpose.");
-        setAnswer('');
+    useEffect(() => {
+        if (user && !sessionStarted) {
+            startPsychologySession(user.id).then(() => {
+                setSessionStarted(true);
+            }).catch(console.error);
+        }
+    }, [user, sessionStarted, startPsychologySession]);
+
+    const handleAnswerSubmit = async (answer: PsychAnswer) => {
+        await submitPsychAnswer(answer);
     };
 
-    // Keyboard event handlers
-    useEffect(() => {
-        const handleKeyPress = (e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                if (answer.length > 0 || isRecording) {
-                    handleNextQuestion();
-                } else {
-                    onNext();
-                }
-            } else if (e.key === 'Tab') {
-                e.preventDefault();
-                setMode(mode === 'text' ? 'voice' : 'text');
-            }
-        };
-        window.addEventListener('keydown', handleKeyPress);
-        return () => window.removeEventListener('keydown', handleKeyPress);
-    }, [answer, isRecording, mode, onNext]);
-    
+    const handleComplete = () => {
+        onNext();
+    };
+
+    if (!sessionStarted || !currentSession) {
+        return (
+            <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="h-full w-full flex items-center justify-center text-white"
+            >
+                <div className="text-center">
+                    <Brain className="animate-pulse mx-auto mb-4" size={48} />
+                    <p>Preparing your psychological assessment...</p>
+                </div>
+            </motion.div>
+        );
+    }
+
     return (
-        <motion.div
-            initial={{ opacity: 0, y: 50 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -50 }}
-            transition={{ duration: 0.7 }}
-            className="h-full w-full flex items-center justify-center p-4"
-        >
-            <GlassPanel className="w-full max-w-lg p-8 flex flex-col items-center">
-                <h2 className="text-xl font-light text-white mb-6 text-center">
-                    {question}
-                </h2>
-
-                <div className="flex items-center space-x-4 mb-6">
-                    <button onClick={() => setMode('text')} className={`p-3 rounded-full transition-all ${mode === 'text' ? 'bg-purple-500/50' : 'bg-black/20'}`}>
-                        <Type className="text-white" />
-                    </button>
-                    <button onClick={() => setMode('voice')} className={`p-3 rounded-full transition-all ${mode === 'voice' ? 'bg-purple-500/50' : 'bg-black/20'}`}>
-                        <Mic className="text-white" />
-                    </button>
-                </div>
-
-                <div className="w-full min-h-[100px] flex items-center justify-center">
-                    {mode === 'text' ? (
-                        <textarea
-                            value={answer}
-                            onChange={(e) => setAnswer(e.target.value)}
-                            placeholder="Type your thoughts here..."
-                            className="w-full h-24 bg-black/20 border border-white/20 rounded-lg p-3 text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all duration-300 resize-none"
-                        />
-                    ) : (
-                        <div className="flex flex-col items-center">
-                            <motion.button 
-                                onClick={() => setIsRecording(!isRecording)}
-                                className={`w-20 h-20 rounded-full flex items-center justify-center transition-colors ${isRecording ? 'bg-red-500/80' : 'bg-purple-500/80'}`}
-                            >
-                                <Mic size={32} className="text-white" />
-                            </motion.button>
-                            {isRecording && <div className="text-white/70 mt-2">Recording...</div>}
-                        </div>
-                    )}
-                </div>
-
-                <div className="mt-8 flex flex-col items-center">
-                     <PrimaryButton onClick={answer.length > 0 || isRecording ? handleNextQuestion : onNext}>
-                        {answer.length > 0 || isRecording ? 'Next Question' : 'Finalize Report'}
-                    </PrimaryButton>
-                    <p className="text-xs text-white/40 mt-2">Press Enter to continue • Tab to switch mode</p>
-                </div>
-            </GlassPanel>
-        </motion.div>
+        <PsychologyQuestionnaire
+            session={currentSession}
+            onAnswerSubmit={handleAnswerSubmit}
+            onComplete={handleComplete}
+        />
     );
 };
 
-const FinalReportPage = ({ onRestart }) => {
-    // Download PDF functionality
-    const handleDownloadPDF = () => {
-        const pdf = new jsPDF();
-        
-        // Title
-        pdf.setFontSize(20);
-        pdf.setTextColor(128, 0, 128);
-        pdf.text('Your Cosmic Blueprint', 20, 30);
-        
-        // Archetype
-        pdf.setFontSize(16);
-        pdf.setTextColor(0, 0, 0);
-        pdf.text(`Archetype: ${MOCK_ARCHETYPE.name}`, 20, 50);
-        
-        // Inspirational line
-        pdf.setFontSize(12);
-        pdf.setTextColor(100, 100, 100);
-        pdf.text(`"${MOCK_ARCHETYPE.inspirationalLine}"`, 20, 65);
-        
-        // Core Insights
-        pdf.setFontSize(14);
-        pdf.setTextColor(0, 0, 0);
-        pdf.text('Core Insights:', 20, 85);
-        
-        const summaryLines = pdf.splitTextToSize(MOCK_REPORT.summary, 170);
-        pdf.setFontSize(11);
-        pdf.text(summaryLines, 20, 100);
-        
-        // Mind vs Heart
-        pdf.text('Mind vs. Heart:', 20, 140);
-        const mindHeartLines = pdf.splitTextToSize(MOCK_REPORT.fullReport.mindVsHeart, 170);
-        pdf.text(mindHeartLines, 20, 155);
-        
-        // Affirmation
-        pdf.text('Affirmation:', 20, 190);
-        const affirmationLines = pdf.splitTextToSize(MOCK_REPORT.fullReport.affirmation, 170);
-        pdf.setTextColor(128, 0, 128);
-        pdf.text(affirmationLines, 20, 205);
-        
-        pdf.save('cosmic-blueprint.pdf');
-    };
+const FinalReportPage = ({ onRestart, user }) => {
+    const [report, setReport] = useState<FinalReport | null>(null);
+    const [isGenerating, setIsGenerating] = useState(true);
+    const { generateReport, downloadPDF, currentSession } = useAstroPsyche();
 
-    // Share functionality
-    const handleShare = async () => {
-        const shareData = {
-            title: 'My Cosmic Blueprint - AstroPsyche',
-            text: `I just discovered I'm "${MOCK_ARCHETYPE.name}" - ${MOCK_ARCHETYPE.inspirationalLine}`,
-            url: window.location.href
-        };
-        
-        if (navigator.share) {
-            try {
-                await navigator.share(shareData);
-            } catch (err) {
-                console.log('Error sharing:', err);
-                fallbackShare();
-            }
-        } else {
-            fallbackShare();
+    useEffect(() => {
+        if (user && currentSession && isGenerating) {
+            generateReport(user.id, currentSession.getSessionId())
+                .then(setReport)
+                .catch(console.error)
+                .finally(() => setIsGenerating(false));
+        }
+    }, [user, currentSession, generateReport, isGenerating]);
+
+    const handleDownloadPDF = async () => {
+        if (!report) return;
+        try {
+            const pdfUrl = await generatePDF(report.id);
+            const link = document.createElement('a');
+            link.href = pdfUrl;
+            link.download = 'cosmic-blueprint.pdf';
+            link.click();
+        } catch (error) {
+            console.error('Failed to download PDF:', error);
         }
     };
 
-    const fallbackShare = () => {
-        const text = `I just discovered I'm "${MOCK_ARCHETYPE.name}" - ${MOCK_ARCHETYPE.inspirationalLine}. Check out AstroPsyche!`;
-        navigator.clipboard.writeText(text).then(() => {
-            alert('Copied to clipboard! Share it anywhere you like.');
-        }).catch(() => {
-            alert('Unable to copy. Please manually share your results!');
-        });
+    const handleShare = async () => {
+        if (!report) return;
+        try {
+            const shareUrl = await shareReport(report.id);
+            if (navigator.share) {
+                await navigator.share({
+                    title: 'My Cosmic Blueprint - AstroPsyche',
+                    text: `I just discovered I'm "${report.archetype_name}" - ${report.inspirational_line}`,
+                    url: shareUrl
+                });
+            } else {
+                await navigator.clipboard.writeText(shareUrl);
+                alert('Share link copied to clipboard!');
+            }
+        } catch (error) {
+            console.error('Failed to share:', error);
+        }
     };
 
-    // Keyboard event handlers
     useEffect(() => {
         const handleKeyPress = (e) => {
-            if (e.key === 'd') {
+            if (e.key === 'd' && report) {
                 handleDownloadPDF();
-            } else if (e.key === 's') {
+            } else if (e.key === 's' && report) {
                 handleShare();
             } else if (e.key === 'r') {
                 onRestart();
@@ -817,7 +767,23 @@ const FinalReportPage = ({ onRestart }) => {
         };
         window.addEventListener('keydown', handleKeyPress);
         return () => window.removeEventListener('keydown', handleKeyPress);
-    }, [onRestart]);
+    }, [onRestart, report]);
+
+    if (isGenerating || !report) {
+        return (
+            <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="h-full w-full flex items-center justify-center text-white"
+            >
+                <div className="text-center">
+                    <Sparkles className="animate-spin mx-auto mb-4" size={48} />
+                    <p className="text-lg">Weaving your cosmic blueprint...</p>
+                    <p className="text-sm text-white/60 mt-2">Integrating astrology and psychology</p>
+                </div>
+            </motion.div>
+        );
+    }
 
     return (
         <motion.div
@@ -833,21 +799,39 @@ const FinalReportPage = ({ onRestart }) => {
                 
                 <div className="flex-grow overflow-y-auto space-y-6 p-2" style={{maxHeight: '60vh'}}>
                     <div>
-                        <h3 className="font-bold text-xl text-purple-300 mb-2">Archetype: {MOCK_ARCHETYPE.name}</h3>
-                        <p className="text-white/80 italic">"{MOCK_ARCHETYPE.inspirationalLine}"</p>
+                        <h3 className="font-bold text-xl text-purple-300 mb-2">Archetype: {report.archetype_name}</h3>
+                        {report.inspirational_line && (
+                            <p className="text-white/80 italic">"{report.inspirational_line}"</p>
+                        )}
                     </div>
                     <div>
                         <h3 className="font-bold text-xl text-purple-300 mb-2">Core Insights</h3>
-                        <p className="text-white/90 leading-relaxed">{MOCK_REPORT.summary}</p>
+                        <p className="text-white/90 leading-relaxed">{report.summary_detailed}</p>
                     </div>
-                    <div>
-                        <h3 className="font-bold text-xl text-purple-300 mb-2">Mind vs. Heart</h3>
-                        <p className="text-white/90 leading-relaxed">{MOCK_REPORT.fullReport.mindVsHeart}</p>
-                    </div>
-                     <div>
-                        <h3 className="font-bold text-xl text-purple-300 mb-2">Poetic Affirmation</h3>
-                        <p className="text-white/90 leading-relaxed italic">{MOCK_REPORT.fullReport.affirmation}</p>
-                    </div>
+                    {report.astrology_breakdown && (
+                        <div>
+                            <h3 className="font-bold text-xl text-purple-300 mb-2">Astrological Foundation</h3>
+                            <p className="text-white/90 leading-relaxed">{report.astrology_breakdown}</p>
+                        </div>
+                    )}
+                    {report.psychology_insights && (
+                        <div>
+                            <h3 className="font-bold text-xl text-purple-300 mb-2">Psychological Patterns</h3>
+                            <p className="text-white/90 leading-relaxed">{report.psychology_insights}</p>
+                        </div>
+                    )}
+                    {report.mind_vs_heart && (
+                        <div>
+                            <h3 className="font-bold text-xl text-purple-300 mb-2">Mind vs. Heart</h3>
+                            <p className="text-white/90 leading-relaxed">{report.mind_vs_heart}</p>
+                        </div>
+                    )}
+                    {report.affirmations && (
+                        <div>
+                            <h3 className="font-bold text-xl text-purple-300 mb-2">Personal Affirmations</h3>
+                            <p className="text-white/90 leading-relaxed italic">{report.affirmations}</p>
+                        </div>
+                    )}
                 </div>
 
                 <motion.div 
@@ -883,6 +867,7 @@ export default function App() {
     const [appStep, setAppStep] = useState(0);
     const [formStep, setFormStep] = useState(0);
     const backgroundRef = useRef(null);
+    const { user } = useAstroPsyche();
 
     const nextAppStep = () => {
         setAppStep(prev => prev + 1);
@@ -897,9 +882,9 @@ export default function App() {
     const pages = [
         <LandingPage key="landing" onNext={nextAppStep} />,
         <BirthDataPage key="birth-data" onNext={nextAppStep} formStep={formStep} setFormStep={setFormStep} backgroundRef={backgroundRef} />,
-        <ReportPreviewPage key="report-preview" onNext={nextAppStep} />,
-        <PsychQAPage key="psych-qa" onNext={nextAppStep} />,
-        <FinalReportPage key="final-report" onRestart={restart} />
+        <ReportPreviewPage key="report-preview" onNext={nextAppStep} user={user} />,
+        <PsychQAPage key="psych-qa" onNext={nextAppStep} user={user} />,
+        <FinalReportPage key="final-report" onRestart={restart} user={user} />
     ];
 
     return (
