@@ -1,30 +1,43 @@
 import { supabase, type FinalReport } from '../lib/supabase';
 import { aiService, type PersonalityAnalysis } from './aiService';
 import { getAstrologyReport } from './astrologyService';
-import { getUserPsychResponses } from './psychologyService';
 import jsPDF from 'jspdf';
 
-export async function generateFinalReport(userId: string, sessionId: string): Promise<FinalReport> {
+export async function generateFinalReport(
+  userId: string, 
+  sessionId: string, 
+  conversationData: Record<string, any>
+): Promise<FinalReport> {
   try {
-    // Fetch all required data
-    const [astrologyReport, psychResponses] = await Promise.all([
-      getAstrologyReport(userId),
-      getUserPsychResponses(userId, sessionId)
-    ]);
-
+    // Fetch astrology report
+    const astrologyReport = await getAstrologyReport(userId);
     if (!astrologyReport) {
       throw new Error('Astrology report not found');
     }
 
-    if (psychResponses.length === 0) {
-      throw new Error('No psychology responses found');
-    }
+    // Create mock psychology responses from conversation data
+    const mockPsychResponses = [{
+      id: sessionId,
+      user_id: userId,
+      session_id: sessionId,
+      question_id: 1,
+      question: 'Conversational Assessment',
+      answer: JSON.stringify(conversationData),
+      response_method: 'text' as const,
+      tone_analysis: { confidence: 0.8, authenticity: 0.9 },
+      emotion_detected: 'thoughtful',
+      honesty_score: 0.85,
+      confidence_level: 0.8,
+      response_time_seconds: 300,
+      word_count: JSON.stringify(conversationData).length,
+      created_at: new Date().toISOString()
+    }];
 
     // Generate AI analysis
     const analysis = await aiService.generatePersonalityAnalysis(
       userId,
       astrologyReport,
-      psychResponses
+      mockPsychResponses
     );
 
     // Create final report
@@ -75,7 +88,7 @@ export async function generatePDF(reportId: string): Promise<string> {
     throw new Error('Report not found');
   }
 
-  // Create PDF
+  // Create enhanced PDF
   const pdf = new jsPDF();
   const pageWidth = pdf.internal.pageSize.getWidth();
   const margin = 20;
@@ -100,75 +113,77 @@ export async function generatePDF(reportId: string): Promise<string> {
       pdf.text(line, margin, yPosition);
       yPosition += lineHeight;
     });
-    yPosition += 3; // Extra spacing after paragraphs
+    yPosition += 3;
   };
 
-  // Title
+  // Enhanced header with branding
+  pdf.setFillColor(128, 0, 128);
+  pdf.rect(0, 0, pageWidth, 25, 'F');
+  
   pdf.setFontSize(24);
   pdf.setFont(undefined, 'bold');
-  pdf.setTextColor(128, 0, 128);
-  pdf.text('Your Cosmic Blueprint', pageWidth / 2, 20, { align: 'center' });
+  pdf.setTextColor(255, 255, 255);
+  pdf.text('AstroPsyche', margin, 18);
+  
+  pdf.setFontSize(12);
+  pdf.setFont(undefined, 'normal');
+  pdf.text('Your Cosmic Blueprint', pageWidth - margin, 18, { align: 'right' });
 
   yPosition = 40;
-
-  // Archetype
   pdf.setTextColor(0, 0, 0);
-  addWrappedText(`Archetype: ${report.archetype_name}`, 18, true);
+
+  // Title
+  pdf.setFontSize(20);
+  pdf.setFont(undefined, 'bold');
+  pdf.setTextColor(128, 0, 128);
+  pdf.text(report.report_title, pageWidth / 2, yPosition, { align: 'center' });
+  yPosition += 15;
+
+  // Archetype section
+  pdf.setTextColor(0, 0, 0);
+  addWrappedText(`Archetype: ${report.archetype_name}`, 16, true);
   
   if (report.inspirational_line) {
     pdf.setTextColor(100, 100, 100);
+    pdf.setFont(undefined, 'italic');
     addWrappedText(`"${report.inspirational_line}"`, 12);
     pdf.setTextColor(0, 0, 0);
+    pdf.setFont(undefined, 'normal');
   }
 
   yPosition += 5;
 
-  // Summary
-  addWrappedText('Core Insights', 14, true);
-  addWrappedText(report.summary_detailed);
+  // Content sections
+  const sections = [
+    { title: 'Core Insights', content: report.summary_detailed },
+    { title: 'Astrological Foundation', content: report.astrology_breakdown },
+    { title: 'Psychological Patterns', content: report.psychology_insights },
+    { title: 'Mind vs. Heart', content: report.mind_vs_heart },
+    { title: 'Your Strengths', content: report.strengths },
+    { title: 'Growth Opportunities', content: report.challenges },
+    { title: 'Personal Affirmations', content: report.affirmations }
+  ];
 
-  // Astrology Breakdown
-  if (report.astrology_breakdown) {
-    addWrappedText('Astrological Foundation', 14, true);
-    addWrappedText(report.astrology_breakdown);
-  }
-
-  // Psychology Insights
-  if (report.psychology_insights) {
-    addWrappedText('Psychological Patterns', 14, true);
-    addWrappedText(report.psychology_insights);
-  }
-
-  // Mind vs Heart
-  if (report.mind_vs_heart) {
-    addWrappedText('Mind vs. Heart', 14, true);
-    addWrappedText(report.mind_vs_heart);
-  }
-
-  // Strengths & Challenges
-  if (report.strengths) {
-    addWrappedText('Your Strengths', 14, true);
-    addWrappedText(report.strengths);
-  }
-
-  if (report.challenges) {
-    addWrappedText('Growth Opportunities', 14, true);
-    addWrappedText(report.challenges);
-  }
-
-  // Affirmations
-  if (report.affirmations) {
-    addWrappedText('Personal Affirmations', 14, true);
-    pdf.setTextColor(128, 0, 128);
-    addWrappedText(report.affirmations);
-  }
+  sections.forEach(section => {
+    if (section.content) {
+      addWrappedText(section.title, 14, true);
+      if (section.title === 'Personal Affirmations') {
+        pdf.setTextColor(128, 0, 128);
+      }
+      addWrappedText(section.content);
+      pdf.setTextColor(0, 0, 0);
+      yPosition += 3;
+    }
+  });
 
   // Footer
   pdf.setTextColor(150, 150, 150);
   pdf.setFontSize(8);
-  pdf.text('Generated by AstroPsyche', pageWidth / 2, pdf.internal.pageSize.getHeight() - 10, { align: 'center' });
+  const footerY = pdf.internal.pageSize.getHeight() - 15;
+  pdf.text('Generated by AstroPsyche', pageWidth / 2, footerY, { align: 'center' });
+  pdf.text(`Generated on ${new Date().toLocaleDateString()}`, pageWidth / 2, footerY + 5, { align: 'center' });
 
-  // Convert to blob and upload (in a real app, you'd upload to cloud storage)
+  // Convert to blob and create URL
   const pdfBlob = pdf.output('blob');
   const pdfUrl = URL.createObjectURL(pdfBlob);
 

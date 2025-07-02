@@ -1,12 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronRight, Download, Mic, Share2, Type, User, Calendar, Clock, MapPin, Check, Brain, Sparkles } from 'lucide-react';
+import { ChevronRight, Download, Share2, Brain, Sparkles, AlertCircle } from 'lucide-react';
 import * as THREE from 'three';
 import { useAstroPsyche } from './hooks/useAstroPsyche';
-import { PsychologyQuestionnaire } from './components/PsychologyQuestionnaire';
+import { ConversationalQuestionnaire } from './components/ConversationalQuestionnaire';
 import { generatePDF, shareReport } from './services/reportService';
 import type { BirthData } from './services/astrologyService';
-import type { PsychAnswer } from './services/psychologyService';
 import type { FinalReport } from './lib/supabase';
 
 // --- 3D Background Component (unchanged) ---
@@ -241,11 +240,8 @@ const ThreeBackground = ({ appStep, formStep }) => {
             0,  // Venus - Form Step 0
             1,  // Earth - Form Step 1 
             2,  // Mars - Form Step 2
-            3,  // Jupiter - Form Step 3
-            4,  // Saturn - Form Step 4
-            0,  // Venus - Report Preview
-            1,  // Earth - Psych Q&A
-            2,  // Mars - Final Report
+            3,  // Jupiter - Conversational Q&A
+            4,  // Saturn - Final Report
         ];
         
         let targetIndex = -1;
@@ -253,7 +249,7 @@ const ThreeBackground = ({ appStep, formStep }) => {
         if (appStep === 1) {
             targetIndex = planetSequence[1 + formStep] ?? -1;
         } else if (appStep > 1) {
-            targetIndex = planetSequence[5 + appStep - 1] ?? -1;
+            targetIndex = planetSequence[1 + appStep] ?? -1;
         } else {
             targetIndex = planetSequence[appStep] ?? -1;
         }
@@ -312,6 +308,34 @@ const InputField = ({ value, onChange, name, type = "text", placeholder, icon })
     </div>
 );
 
+// --- CONNECTION STATUS COMPONENT ---
+const ConnectionStatus = ({ status, onRetry }) => {
+    if (status === 'connected') return null;
+
+    return (
+        <motion.div
+            initial={{ opacity: 0, y: -50 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="fixed top-4 left-1/2 -translate-x-1/2 z-50"
+        >
+            <div className="bg-red-500/90 backdrop-blur-sm text-white px-4 py-2 rounded-lg flex items-center gap-2">
+                <AlertCircle size={16} />
+                <span className="text-sm">
+                    {status === 'checking' ? 'Checking connection...' : 'Database connection failed'}
+                </span>
+                {status === 'disconnected' && (
+                    <button
+                        onClick={onRetry}
+                        className="ml-2 text-xs bg-white/20 px-2 py-1 rounded hover:bg-white/30 transition-colors"
+                    >
+                        Retry
+                    </button>
+                )}
+            </div>
+        </motion.div>
+    );
+};
+
 // --- PAGE COMPONENTS ---
 const LandingPage = ({ onNext }) => {
     useEffect(() => {
@@ -346,10 +370,10 @@ const LandingPage = ({ onNext }) => {
                 transition={{ delay: 0.8, duration: 1 }}
                 className="text-lg md:text-xl text-white/70 mb-12 max-w-md"
             >
-                "The stars hold stories you haven't heard yet..."
+                "Discover your cosmic blueprint through AI-powered conversation..."
             </motion.p>
             <PrimaryButton onClick={onNext}>
-                Begin Self-Discovery
+                Begin Your Journey
             </PrimaryButton>
             <p className="text-sm text-white/40 mt-4">Press Enter to continue</p>
         </motion.div>
@@ -359,9 +383,7 @@ const LandingPage = ({ onNext }) => {
 const BirthDataPage = ({ onNext, formStep, setFormStep, backgroundRef }) => {
     const [formData, setFormData] = useState({
         name: '',
-        gender: '',
         dob: '',
-        age: null,
         time: '',
         location: null,
         locationInput: ''
@@ -374,34 +396,6 @@ const BirthDataPage = ({ onNext, formStep, setFormStep, backgroundRef }) => {
     const handleInputChange = (e) => {
         const { name, value } = e.target;
         setFormData(prev => ({ ...prev, [name]: value }));
-    };
-    
-    useEffect(() => {
-        if (formStep === 3) {
-            const timer = setTimeout(() => {
-                nextFormStep();
-            }, 2500); 
-            return () => clearTimeout(timer);
-        }
-    }, [formStep]);
-
-    const calculateAge = (dob) => {
-        if (!dob) return null;
-        const birthDate = new Date(dob);
-        const today = new Date();
-        let years = today.getFullYear() - birthDate.getFullYear();
-        let months = today.getMonth() - birthDate.getMonth();
-        if (months < 0 || (months === 0 && today.getDate() < birthDate.getDate())) {
-            years--;
-            months += 12;
-        }
-        return { years, months };
-    };
-
-    const handleDobSubmit = () => {
-        const age = calculateAge(formData.dob);
-        setFormData(prev => ({ ...prev, age }));
-        nextFormStep();
     };
     
     const handleLocationSelect = () => {
@@ -453,10 +447,10 @@ const BirthDataPage = ({ onNext, formStep, setFormStep, backgroundRef }) => {
         const handleKeyPress = (e) => {
             if (e.key === 'Enter') {
                 if (formStep === 0 && formData.name) nextFormStep();
-                else if (formStep === 2 && formData.dob) handleDobSubmit();
-                else if (formStep === 4 && formData.time) nextFormStep();
-                else if (formStep === 5 && formData.locationInput) handleLocationSelect();
-                else if (formStep === 6) handleSubmit();
+                else if (formStep === 1 && formData.dob) nextFormStep();
+                else if (formStep === 2 && formData.time) nextFormStep();
+                else if (formStep === 3 && formData.locationInput) handleLocationSelect();
+                else if (formStep === 4) handleSubmit();
             } else if (e.key === 'Backspace' && formStep > 0 && !e.target.matches('input, textarea')) {
                 setFormStep(prev => prev - 1);
             }
@@ -474,78 +468,50 @@ const BirthDataPage = ({ onNext, formStep, setFormStep, backgroundRef }) => {
 
     const steps = [
         <motion.div key="name" {...motionProps} className="w-full flex flex-col items-center">
-            <h2 className="text-2xl font-bold text-white mb-6 text-center">What is your name?</h2>
-            <InputField name="name" placeholder="Your Name" icon={<User size={18} />} value={formData.name} onChange={handleInputChange} />
+            <h2 className="text-2xl font-bold text-white mb-6 text-center">What's your name?</h2>
+            <InputField name="name" placeholder="Your Name" value={formData.name} onChange={handleInputChange} />
             <div className="mt-8 flex flex-col items-center">
                 <PrimaryButton onClick={nextFormStep} disabled={!formData.name}>Continue</PrimaryButton>
                 <p className="text-xs text-white/40 mt-2">Press Enter to continue</p>
             </div>
         </motion.div>,
-        <motion.div key="gender" {...motionProps} className="w-full flex flex-col items-center">
-            <h2 className="text-2xl font-bold text-white mb-6 text-center">How do you identify?</h2>
-            <div className="flex space-x-4">
-                {['Male', 'Female', 'Other'].map(g => (
-                    <button key={g} onClick={() => { setFormData(p => ({...p, gender: g})); nextFormStep(); }}
-                        className="px-6 py-3 bg-black/20 border border-white/20 rounded-lg text-white hover:bg-white/10 transition-all">
-                        {g}
-                    </button>
-                ))}
-            </div>
-            <p className="text-xs text-white/40 mt-4">Backspace to go back</p>
-        </motion.div>,
         <motion.div key="dob" {...motionProps} className="w-full flex flex-col items-center">
             <h2 className="text-2xl font-bold text-white mb-6 text-center">When were you born?</h2>
-            <InputField name="dob" type="date" placeholder="Date of Birth" icon={<Calendar size={18} />} value={formData.dob} onChange={handleInputChange} />
+            <InputField name="dob" type="date" placeholder="Date of Birth" value={formData.dob} onChange={handleInputChange} />
             <div className="mt-8 flex flex-col items-center">
-                <PrimaryButton onClick={handleDobSubmit} disabled={!formData.dob}>Confirm Date</PrimaryButton>
+                <PrimaryButton onClick={nextFormStep} disabled={!formData.dob}>Continue</PrimaryButton>
                 <p className="text-xs text-white/40 mt-2">Press Enter to continue</p>
             </div>
         </motion.div>,
-        <motion.div key="age" {...motionProps} className="w-full flex flex-col items-center text-center">
-            <h2 className="text-2xl font-bold text-white mb-4">You are</h2>
-            <div className="text-5xl font-bold text-purple-300 animate-pulse">
-                {formData.age?.years} years & {formData.age?.months} months
-            </div>
-            <p className="text-white/70 mt-4">old.</p>
-        </motion.div>,
         <motion.div key="time" {...motionProps} className="w-full flex flex-col items-center">
-            <h2 className="text-2xl font-bold text-white mb-6 text-center">And at what time?</h2>
-            <InputField name="time" type="time" placeholder="Time of Birth" icon={<Clock size={18} />} value={formData.time} onChange={handleInputChange} />
+            <h2 className="text-2xl font-bold text-white mb-6 text-center">What time were you born?</h2>
+            <InputField name="time" type="time" placeholder="Time of Birth" value={formData.time} onChange={handleInputChange} />
             <div className="mt-8 flex flex-col items-center">
-                <PrimaryButton onClick={nextFormStep} disabled={!formData.time}>Next</PrimaryButton>
+                <PrimaryButton onClick={nextFormStep} disabled={!formData.time}>Continue</PrimaryButton>
                 <p className="text-xs text-white/40 mt-2">Press Enter to continue</p>
             </div>
         </motion.div>,
         <motion.div key="location" {...motionProps} className="w-full flex flex-col items-center">
             <h2 className="text-2xl font-bold text-white mb-6 text-center">Where were you born?</h2>
-            <InputField name="locationInput" placeholder="City, Country (e.g., Paris, France)" icon={<MapPin size={18} />} value={formData.locationInput} onChange={handleInputChange} />
-            <p className="text-xs text-white/50 mt-2">Simulating location lookup</p>
+            <InputField name="locationInput" placeholder="City, Country" value={formData.locationInput} onChange={handleInputChange} />
             <div className="mt-8 flex flex-col items-center">
-                <PrimaryButton onClick={handleLocationSelect} disabled={!formData.locationInput}>Select Location</PrimaryButton>
+                <PrimaryButton onClick={handleLocationSelect} disabled={!formData.locationInput}>Continue</PrimaryButton>
                 <p className="text-xs text-white/40 mt-2">Press Enter to continue</p>
             </div>
         </motion.div>,
-        <motion.div key="map" {...motionProps} className="w-full flex flex-col items-center">
-             <h2 className="text-2xl font-bold text-white mb-4 text-center">Confirming Location</h2>
-             <motion.div 
-                initial={{ scale: 2, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                transition={{ duration: 1.5, ease: 'easeOut' }}
-                className="w-64 h-40 bg-gray-800 rounded-lg border border-blue-400/50 overflow-hidden relative flex items-center justify-center shadow-2xl">
-                <img src="https://images.pexels.com/photos/355770/pexels-photo-355770.jpeg" alt="Map Preview" className="w-full h-full object-cover opacity-30" />
-                <div className="absolute w-3 h-3 bg-purple-400 rounded-full animate-ping"></div>
-                <div className="absolute w-3 h-3 bg-purple-400 rounded-full"></div>
-             </motion.div>
-             <div className="text-center mt-4">
-                <p className="font-bold text-white">{formData.location?.name}</p>
-                <p className="text-sm text-white/60">Lat: {formData.location?.lat}, Lon: {formData.location?.lon}</p>
-             </div>
-             <div className="mt-6 flex flex-col items-center">
+        <motion.div key="confirm" {...motionProps} className="w-full flex flex-col items-center">
+            <h2 className="text-2xl font-bold text-white mb-6 text-center">Ready to begin?</h2>
+            <div className="text-center mb-6">
+                <p className="text-white/80">Name: {formData.name}</p>
+                <p className="text-white/80">Born: {formData.dob} at {formData.time}</p>
+                <p className="text-white/80">Location: {formData.location?.name}</p>
+            </div>
+            <div className="mt-8 flex flex-col items-center">
                 <PrimaryButton onClick={handleSubmit} disabled={loading || isLoading}>
-                    <Check className="inline-block mr-2"/> {loading || isLoading ? 'Generating...' : 'Confirm & Generate'}
+                    {loading || isLoading ? 'Creating Profile...' : 'Start Conversation'}
                 </PrimaryButton>
                 <p className="text-xs text-white/40 mt-2">Press Enter to continue</p>
-             </div>
+            </div>
         </motion.div>
     ];
 
@@ -553,8 +519,8 @@ const BirthDataPage = ({ onNext, formStep, setFormStep, backgroundRef }) => {
         return (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="h-full w-full flex flex-col items-center justify-center text-white p-4">
                 <Sparkles className="animate-spin mb-4" size={48} />
-                <p className="mt-8 text-lg text-white/80">Aligning the cosmos...</p>
-                <p className="text-sm text-white/60 mt-2">Generating your astrological chart</p>
+                <p className="mt-8 text-lg text-white/80">Setting up your cosmic profile...</p>
+                <p className="text-sm text-white/60 mt-2">Calculating astrological chart</p>
                 {error && <p className="text-red-400 mt-4">{error}</p>}
             </motion.div>
         );
@@ -571,121 +537,19 @@ const BirthDataPage = ({ onNext, formStep, setFormStep, backgroundRef }) => {
     );
 };
 
-const ReportPreviewPage = ({ onNext, user }) => {
-    const [activeTab, setActiveTab] = useState('simple');
+const ConversationalQAPage = ({ onNext, user }) => {
+    const { generateReport, isLoading } = useAstroPsyche();
 
-    useEffect(() => {
-        const handleKeyPress = (e) => {
-            if (e.key === 'Enter') {
-                onNext();
-            } else if (e.key === '1') {
-                setActiveTab('simple');
-            } else if (e.key === '2') {
-                setActiveTab('detailed');
-            }
-        };
-        window.addEventListener('keydown', handleKeyPress);
-        return () => window.removeEventListener('keydown', handleKeyPress);
-    }, [onNext]);
-
-    const mockArchetype = {
-        name: "The Cosmic Navigator",
-        blend: "Exploring the intersection of mind and spirit",
-        inspirationalLine: "You chart courses through both inner and outer worlds with equal grace."
-    };
-
-    const mockReport = {
-        summary: "Your astrological chart reveals a complex individual who balances analytical thinking with intuitive wisdom. You possess a natural ability to see patterns and connections that others miss, making you both a visionary and a practical problem-solver.",
-        fullReport: {
-            astrology: "Your planetary placements suggest someone who thinks deeply about life's mysteries while maintaining a grounded approach to daily challenges. There's a beautiful tension between your desire for adventure and your need for security.",
-            psychology: "Your responses indicate high emotional intelligence and a tendency toward introspection. You value authenticity and are not afraid to explore the deeper aspects of your personality."
+    const handleConversationComplete = async (extractedData: Record<string, any>) => {
+        try {
+            await generateReport(extractedData);
+            onNext();
+        } catch (error) {
+            console.error('Failed to generate report:', error);
         }
     };
 
-    return (
-        <motion.div
-            initial={{ opacity: 0, scale: 0.8 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.8 }}
-            transition={{ duration: 0.7 }}
-            className="h-full w-full flex flex-col items-center justify-center p-4 text-white"
-        >
-            <GlassPanel className="w-full max-w-2xl p-6 md:p-8 flex flex-col">
-                <motion.div 
-                    initial={{ opacity: 0, y: -20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.2, duration: 0.5 }}
-                    className="text-center mb-6"
-                >
-                    <h3 className="text-2xl font-bold text-purple-300">{mockArchetype.name}</h3>
-                    <p className="text-white/70">{mockArchetype.blend}</p>
-                    <p className="text-lg mt-2 italic">"{mockArchetype.inspirationalLine}"</p>
-                </motion.div>
-
-                <div className="flex justify-center border-b border-white/20 mb-4">
-                    <button onClick={() => setActiveTab('simple')} className={`px-4 py-2 text-lg font-semibold transition-colors ${activeTab === 'simple' ? 'text-purple-400 border-b-2 border-purple-400' : 'text-white/60'}`}>Summary</button>
-                    <button onClick={() => setActiveTab('detailed')} className={`px-4 py-2 text-lg font-semibold transition-colors ${activeTab === 'detailed' ? 'text-purple-400 border-b-2 border-purple-400' : 'text-white/60'}`}>Detailed</button>
-                </div>
-
-                <div className="flex-grow overflow-y-auto p-2" style={{maxHeight: '40vh'}}>
-                    <AnimatePresence mode="wait">
-                        <motion.div
-                            key={activeTab}
-                            initial={{ opacity: 0, y: 20 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: -20 }}
-                            transition={{ duration: 0.4 }}
-                        >
-                            {activeTab === 'simple' ? (
-                                <p className="text-white/90 leading-relaxed">{mockReport.summary}</p>
-                            ) : (
-                                <div className="space-y-4">
-                                    <div>
-                                        <h4 className="font-bold text-purple-300 mb-1">Astrology Breakdown</h4>
-                                        <p className="text-white/90 leading-relaxed text-sm">{mockReport.fullReport.astrology}</p>
-                                    </div>
-                                    <div>
-                                        <h4 className="font-bold text-purple-300 mb-1">Psychological Insights</h4>
-                                        <p className="text-white/90 leading-relaxed text-sm">{mockReport.fullReport.psychology}</p>
-                                    </div>
-                                </div>
-                            )}
-                        </motion.div>
-                    </AnimatePresence>
-                </div>
-                
-                <div className="mt-8 flex flex-col items-center">
-                    <PrimaryButton onClick={onNext}>
-                        Deepen with Psychology <ChevronRight size={20} className="inline-block ml-2" />
-                    </PrimaryButton>
-                    <p className="text-xs text-white/40 mt-2">Press Enter to continue • Press 1/2 to switch tabs</p>
-                </div>
-            </GlassPanel>
-        </motion.div>
-    );
-};
-
-const PsychQAPage = ({ onNext, user }) => {
-    const { startPsychologySession, submitPsychAnswer, currentSession, isLoading } = useAstroPsyche();
-    const [sessionStarted, setSessionStarted] = useState(false);
-
-    useEffect(() => {
-        if (user && !sessionStarted) {
-            startPsychologySession(user.id).then(() => {
-                setSessionStarted(true);
-            }).catch(console.error);
-        }
-    }, [user, sessionStarted, startPsychologySession]);
-
-    const handleAnswerSubmit = async (answer: PsychAnswer) => {
-        await submitPsychAnswer(answer);
-    };
-
-    const handleComplete = () => {
-        onNext();
-    };
-
-    if (!sessionStarted || !currentSession) {
+    if (!user) {
         return (
             <motion.div
                 initial={{ opacity: 0 }}
@@ -694,17 +558,16 @@ const PsychQAPage = ({ onNext, user }) => {
             >
                 <div className="text-center">
                     <Brain className="animate-pulse mx-auto mb-4" size={48} />
-                    <p>Preparing your psychological assessment...</p>
+                    <p>Loading your profile...</p>
                 </div>
             </motion.div>
         );
     }
 
     return (
-        <PsychologyQuestionnaire
-            session={currentSession}
-            onAnswerSubmit={handleAnswerSubmit}
-            onComplete={handleComplete}
+        <ConversationalQuestionnaire
+            userId={user.id}
+            onComplete={handleConversationComplete}
         />
     );
 };
@@ -712,25 +575,25 @@ const PsychQAPage = ({ onNext, user }) => {
 const FinalReportPage = ({ onRestart, user }) => {
     const [report, setReport] = useState<FinalReport | null>(null);
     const [isGenerating, setIsGenerating] = useState(true);
-    const { generateReport, downloadPDF, currentSession } = useAstroPsyche();
+    const { currentReport, downloadPDF } = useAstroPsyche();
 
     useEffect(() => {
-        if (user && currentSession && isGenerating) {
-            generateReport(user.id, currentSession.getSessionId())
-                .then(setReport)
-                .catch(console.error)
-                .finally(() => setIsGenerating(false));
+        if (currentReport) {
+            setReport(currentReport);
+            setIsGenerating(false);
         }
-    }, [user, currentSession, generateReport, isGenerating]);
+    }, [currentReport]);
 
     const handleDownloadPDF = async () => {
         if (!report) return;
         try {
-            const pdfUrl = await generatePDF(report.id);
-            const link = document.createElement('a');
-            link.href = pdfUrl;
-            link.download = 'cosmic-blueprint.pdf';
-            link.click();
+            const pdfUrl = await downloadPDF(report.id);
+            if (pdfUrl) {
+                const link = document.createElement('a');
+                link.href = pdfUrl;
+                link.download = 'cosmic-blueprint.pdf';
+                link.click();
+            }
         } catch (error) {
             console.error('Failed to download PDF:', error);
         }
@@ -739,7 +602,7 @@ const FinalReportPage = ({ onRestart, user }) => {
     const handleShare = async () => {
         if (!report) return;
         try {
-            const shareUrl = await shareReport(report.id);
+            const shareUrl = `${window.location.origin}/shared/${report.share_token}`;
             if (navigator.share) {
                 await navigator.share({
                     title: 'My Cosmic Blueprint - AstroPsyche',
@@ -779,7 +642,7 @@ const FinalReportPage = ({ onRestart, user }) => {
                 <div className="text-center">
                     <Sparkles className="animate-spin mx-auto mb-4" size={48} />
                     <p className="text-lg">Weaving your cosmic blueprint...</p>
-                    <p className="text-sm text-white/60 mt-2">Integrating astrology and psychology</p>
+                    <p className="text-sm text-white/60 mt-2">Integrating conversation insights</p>
                 </div>
             </motion.div>
         );
@@ -867,7 +730,7 @@ export default function App() {
     const [appStep, setAppStep] = useState(0);
     const [formStep, setFormStep] = useState(0);
     const backgroundRef = useRef(null);
-    const { user } = useAstroPsyche();
+    const { user, connectionStatus, checkConnection } = useAstroPsyche();
 
     const nextAppStep = () => {
         setAppStep(prev => prev + 1);
@@ -882,14 +745,14 @@ export default function App() {
     const pages = [
         <LandingPage key="landing" onNext={nextAppStep} />,
         <BirthDataPage key="birth-data" onNext={nextAppStep} formStep={formStep} setFormStep={setFormStep} backgroundRef={backgroundRef} />,
-        <ReportPreviewPage key="report-preview" onNext={nextAppStep} user={user} />,
-        <PsychQAPage key="psych-qa" onNext={nextAppStep} user={user} />,
+        <ConversationalQAPage key="conversational-qa" onNext={nextAppStep} user={user} />,
         <FinalReportPage key="final-report" onRestart={restart} user={user} />
     ];
 
     return (
         <main className="h-screen w-screen bg-black font-sans overflow-hidden">
             <ThreeBackground ref={backgroundRef} appStep={appStep} formStep={formStep} />
+            <ConnectionStatus status={connectionStatus} onRetry={checkConnection} />
             <div className="relative z-10 h-full w-full">
                 <AnimatePresence mode="wait">
                     {pages[appStep]}
