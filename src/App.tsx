@@ -6,6 +6,7 @@ import { useAstroPsyche } from './hooks/useAstroPsyche';
 import { useAuth } from './hooks/useAuth';
 import { AuthModal } from './components/AuthModal';
 import { ConversationalQuestionnaire } from './components/ConversationalQuestionnaire';
+import { ThemedDatePicker, ThemedTimePicker } from './components/DateTimePickers';
 import { generatePDF, shareReport } from './services/reportService';
 import { isDemoMode } from './lib/supabase';
 import type { BirthData } from './services/astrologyService';
@@ -408,6 +409,14 @@ const BirthDataPage = ({ onNext, formStep, setFormStep, backgroundRef, user }) =
         const { name, value } = e.target;
         setFormData(prev => ({ ...prev, [name]: value }));
     };
+
+    const handleDateChange = (date: string) => {
+        setFormData(prev => ({ ...prev, dob: date }));
+    };
+
+    const handleTimeChange = (time: string) => {
+        setFormData(prev => ({ ...prev, time: time }));
+    };
     
     const handleLocationSelect = () => {
         setFormData(prev => ({ 
@@ -490,7 +499,11 @@ const BirthDataPage = ({ onNext, formStep, setFormStep, backgroundRef, user }) =
         </motion.div>,
         <motion.div key="dob" {...motionProps} className="w-full flex flex-col items-center">
             <h2 className="text-xl sm:text-2xl font-bold text-white mb-4 sm:mb-6 text-center px-4">When were you born?</h2>
-            <InputField name="dob" type="date" placeholder="Date of Birth" value={formData.dob} onChange={handleInputChange} />
+            <ThemedDatePicker 
+                value={formData.dob} 
+                onChange={handleDateChange}
+                placeholder="Select your birth date"
+            />
             <div className="mt-6 sm:mt-8 flex flex-col items-center">
                 <PrimaryButton onClick={nextFormStep} disabled={!formData.dob}>Continue</PrimaryButton>
                 <p className="text-xs text-white/40 mt-2">Press Enter to continue</p>
@@ -498,7 +511,11 @@ const BirthDataPage = ({ onNext, formStep, setFormStep, backgroundRef, user }) =
         </motion.div>,
         <motion.div key="time" {...motionProps} className="w-full flex flex-col items-center">
             <h2 className="text-xl sm:text-2xl font-bold text-white mb-4 sm:mb-6 text-center px-4">What time were you born?</h2>
-            <InputField name="time" type="time" placeholder="Time of Birth" value={formData.time} onChange={handleInputChange} />
+            <ThemedTimePicker 
+                value={formData.time} 
+                onChange={handleTimeChange}
+                placeholder="Select your birth time"
+            />
             <div className="mt-6 sm:mt-8 flex flex-col items-center">
                 <PrimaryButton onClick={nextFormStep} disabled={!formData.time}>Continue</PrimaryButton>
                 <p className="text-xs text-white/40 mt-2">Press Enter to continue</p>
