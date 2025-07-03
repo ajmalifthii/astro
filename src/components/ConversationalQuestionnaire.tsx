@@ -187,16 +187,16 @@ export function ConversationalQuestionnaire({ userId, onComplete }: Conversation
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      className="h-full w-full flex flex-col max-w-2xl mx-auto p-4"
+      className="h-full w-full flex flex-col max-w-4xl mx-auto p-4"
     >
       {/* Header */}
-      <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-t-2xl p-4 flex items-center gap-3">
-        <div className="w-10 h-10 bg-purple-500/20 rounded-full flex items-center justify-center">
-          <Brain size={20} className="text-purple-400" />
+      <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-t-2xl p-3 sm:p-4 flex items-center gap-3">
+        <div className="w-8 h-8 sm:w-10 sm:h-10 bg-purple-500/20 rounded-full flex items-center justify-center">
+          <Brain size={16} className="sm:w-5 sm:h-5 text-purple-400" />
         </div>
-        <div>
-          <h2 className="text-white font-semibold">AI Psychology Assistant</h2>
-          <p className="text-white/60 text-sm">
+        <div className="flex-1 min-w-0">
+          <h2 className="text-white font-semibold text-sm sm:text-base truncate">AI Psychology Assistant</h2>
+          <p className="text-white/60 text-xs sm:text-sm truncate">
             {conversationState?.isComplete 
               ? 'Assessment Complete' 
               : `Phase: ${conversationState?.currentPhase || 'Initializing'}`
@@ -204,17 +204,17 @@ export function ConversationalQuestionnaire({ userId, onComplete }: Conversation
           </p>
         </div>
         {conversationState && (
-          <div className="ml-auto">
-            <div className="w-8 h-8 bg-green-500/20 rounded-full flex items-center justify-center">
-              <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
+          <div className="flex-shrink-0">
+            <div className="w-6 h-6 sm:w-8 sm:h-8 bg-green-500/20 rounded-full flex items-center justify-center">
+              <div className="w-1.5 h-1.5 sm:w-2 sm:h-2 bg-green-400 rounded-full animate-pulse" />
             </div>
           </div>
         )}
       </div>
 
       {/* Messages */}
-      <div className="flex-1 bg-white/5 backdrop-blur-xl border-x border-white/10 p-4 overflow-y-auto min-h-0">
-        <div className="space-y-4">
+      <div className="flex-1 bg-white/5 backdrop-blur-xl border-x border-white/10 p-3 sm:p-4 overflow-y-auto min-h-0">
+        <div className="space-y-3 sm:space-y-4">
           <AnimatePresence>
             {messages.map((message) => (
               <motion.div
@@ -225,13 +225,13 @@ export function ConversationalQuestionnaire({ userId, onComplete }: Conversation
                 className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
               >
                 <div
-                  className={`max-w-[80%] p-3 rounded-2xl ${
+                  className={`max-w-[85%] sm:max-w-[80%] p-3 rounded-2xl ${
                     message.role === 'user'
-                      ? 'bg-purple-500/80 text-white ml-4'
-                      : 'bg-white/10 text-white mr-4'
+                      ? 'bg-purple-500/80 text-white ml-2 sm:ml-4'
+                      : 'bg-white/10 text-white mr-2 sm:mr-4'
                   }`}
                 >
-                  <p className="text-sm leading-relaxed">{message.content}</p>
+                  <p className="text-xs sm:text-sm leading-relaxed">{message.content}</p>
                   <p className="text-xs opacity-60 mt-1">
                     {message.timestamp.toLocaleTimeString([], { 
                       hour: '2-digit', 
@@ -250,12 +250,12 @@ export function ConversationalQuestionnaire({ userId, onComplete }: Conversation
               animate={{ opacity: 1, y: 0 }}
               className="flex justify-start"
             >
-              <div className="bg-white/10 text-white mr-4 p-3 rounded-2xl">
+              <div className="bg-white/10 text-white mr-2 sm:mr-4 p-3 rounded-2xl">
                 <div className="flex items-center gap-2">
                   <div className="flex gap-1">
-                    <div className="w-2 h-2 bg-white/60 rounded-full animate-bounce" />
-                    <div className="w-2 h-2 bg-white/60 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }} />
-                    <div className="w-2 h-2 bg-white/60 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }} />
+                    <div className="w-1.5 h-1.5 sm:w-2 sm:h-2 bg-white/60 rounded-full animate-bounce" />
+                    <div className="w-1.5 h-1.5 sm:w-2 sm:h-2 bg-white/60 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }} />
+                    <div className="w-1.5 h-1.5 sm:w-2 sm:h-2 bg-white/60 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }} />
                   </div>
                   <span className="text-xs text-white/60">AI is thinking...</span>
                 </div>
@@ -270,10 +270,10 @@ export function ConversationalQuestionnaire({ userId, onComplete }: Conversation
               animate={{ opacity: 1, scale: 1 }}
               className="flex justify-center py-4"
             >
-              <div className="bg-green-500/20 border border-green-400/30 rounded-xl p-4 text-center">
-                <Sparkles className="mx-auto mb-2 text-green-400" size={24} />
-                <p className="text-green-400 font-semibold">Assessment Complete!</p>
-                <p className="text-white/70 text-sm">Generating your cosmic blueprint...</p>
+              <div className="bg-green-500/20 border border-green-400/30 rounded-xl p-4 text-center max-w-sm">
+                <Sparkles className="mx-auto mb-2 text-green-400" size={20} />
+                <p className="text-green-400 font-semibold text-sm">Assessment Complete!</p>
+                <p className="text-white/70 text-xs">Generating your cosmic blueprint...</p>
               </div>
             </motion.div>
           )}
@@ -283,8 +283,8 @@ export function ConversationalQuestionnaire({ userId, onComplete }: Conversation
 
       {/* Input */}
       {!conversationState?.isComplete && (
-        <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-b-2xl p-4">
-          <div className="flex items-center gap-3">
+        <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-b-2xl p-3 sm:p-4">
+          <div className="flex items-center gap-2 sm:gap-3">
             <div className="flex-1 relative">
               <input
                 ref={inputRef}
@@ -294,26 +294,26 @@ export function ConversationalQuestionnaire({ userId, onComplete }: Conversation
                 onKeyPress={handleKeyPress}
                 placeholder="Type your response..."
                 disabled={isLoading || isTyping}
-                className="w-full bg-black/20 border border-white/20 rounded-xl py-3 px-4 pr-12 text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all duration-300 disabled:opacity-50"
+                className="w-full bg-black/20 border border-white/20 rounded-xl py-2.5 sm:py-3 px-3 sm:px-4 pr-10 sm:pr-12 text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all duration-300 disabled:opacity-50 text-sm sm:text-base"
               />
               <button
                 onClick={toggleRecording}
-                className={`absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-lg transition-colors ${
+                className={`absolute right-2 sm:right-3 top-1/2 -translate-y-1/2 p-1 rounded-lg transition-colors ${
                   isRecording ? 'text-red-400 bg-red-500/20' : 'text-white/60 hover:text-white'
                 }`}
               >
-                {isRecording ? <MicOff size={16} /> : <Mic size={16} />}
+                {isRecording ? <MicOff size={14} className="sm:w-4 sm:h-4" /> : <Mic size={14} className="sm:w-4 sm:h-4" />}
               </button>
             </div>
             <button
               onClick={sendMessage}
               disabled={!currentMessage.trim() || isLoading || isTyping}
-              className="p-3 bg-purple-500/80 text-white rounded-xl hover:bg-purple-500 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+              className="p-2.5 sm:p-3 bg-purple-500/80 text-white rounded-xl hover:bg-purple-500 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center flex-shrink-0"
             >
               {isLoading ? (
-                <Loader2 size={20} className="animate-spin" />
+                <Loader2 size={16} className="sm:w-5 sm:h-5 animate-spin" />
               ) : (
-                <Send size={20} />
+                <Send size={16} className="sm:w-5 sm:h-5" />
               )}
             </button>
           </div>

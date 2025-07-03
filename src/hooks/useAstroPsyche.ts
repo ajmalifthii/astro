@@ -3,6 +3,7 @@ import { supabase, type User, checkSupabaseConnection } from '../lib/supabase';
 import { generateAstrologyReport, type BirthData } from '../services/astrologyService';
 import { generateFinalReport, generatePDF } from '../services/reportService';
 import { useAppStore, handleAsyncError } from '../services/stateManager';
+import { useAuth } from './useAuth';
 
 export function useAstroPsyche() {
   const {
@@ -18,6 +19,7 @@ export function useAstroPsyche() {
     setCurrentReport
   } = useAppStore();
 
+  const { user: authUser } = useAuth();
   const [connectionStatus, setConnectionStatus] = useState<'checking' | 'connected' | 'disconnected'>('checking');
 
   // Check Supabase connection on mount
@@ -36,54 +38,13 @@ export function useAstroPsyche() {
   };
 
   const createUser = useCallback(async (birthData: BirthData): Promise<User | null> => {
+    if (!authUser) {
+      setError('Please log in first');
+      return null;
+    }
+
     return handleAsyncError(async () => {
-      // First, try to sign in anonymously
-      let authData;
-      try {
-        const { data, error: authError } = await supabase.auth.signInAnonymously();
-        
-        if (authError) {
-          // If anonymous auth fails, provide helpful error message
-          if (authError.message.includes('anonymous_provider_disabled')) {
-            throw new Error(
-              'Anonymous authentication is disabled. Please enable anonymous sign-ins in your Supabase project settings under Authentication > Providers.'
-            );
-          }
-          throw new Error(`Authentication failed: ${authError.message}`);
-        }
-        
-        authData = data;
-      } catch (error) {
-        // Fallback: try to create a temporary user without auth for demo purposes
-        console.warn('Anonymous auth failed, creating temporary user:', error);
-        
-        // Generate a temporary UUID for demo purposes
-        const tempUserId = 'temp-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
-        
-        const userData = {
-          id: tempUserId,
-          full_name: birthData.name,
-          birth_date: birthData.birthDate,
-          birth_time: birthData.birthTime,
-          birth_place: birthData.birthPlace,
-          latitude: birthData.latitude,
-          longitude: birthData.longitude,
-          timezone: birthData.timezone || 'UTC',
-          consent_data_usage: true,
-          consent_ai_analysis: true,
-          profile_completed: false,
-          last_active: new Date().toISOString(),
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        };
-
-        // Store in localStorage as fallback
-        localStorage.setItem('astropsyche_user', JSON.stringify(userData));
-        setUser(userData);
-        return userData;
-      }
-
-      const userId = authData.user.id;
+      const userId = authUser.id;
 
       // Create user profile with enhanced data
       const userData = {
@@ -137,7 +98,7 @@ export function useAstroPsyche() {
         return fallbackUser;
       }
     }, 'Failed to create user account');
-  }, [setUser]);
+  }, [setUser, authUser]);
 
   const updateUserProfile = useCallback(async (updates: Partial<User>): Promise<User | null> => {
     if (!user) {
@@ -251,13 +212,6 @@ export function useAstroPsyche() {
     }, 'Failed to fetch user reports');
   }, [user]);
 
-  const signOut = useCallback(async () => {
-    await supabase.auth.signOut();
-    localStorage.removeItem('astropsyche_user');
-    localStorage.removeItem('astropsyche_reports');
-    useAppStore.getState().reset();
-  }, []);
-
   // Auto-save conversation data
   const saveConversationData = useCallback((data: Record<string, any>) => {
     setConversationData(data);
@@ -265,19 +219,24 @@ export function useAstroPsyche() {
     localStorage.setItem('astropsyche_conversation', JSON.stringify(data));
   }, [setConversationData]);
 
-  // Load user from localStorage on mount if available
+  // Load user from localStorage on mount if available and authenticated
   useEffect(() => {
-    const storedUser = localStorage.getItem('astropsyche_user');
-    if (storedUser && !user) {
-      try {
-        const parsedUser = JSON.parse(storedUser);
-        setUser(parsedUser);
-      } catch (error) {
-        console.error('Failed to parse stored user:', error);
-        localStorage.removeItem('astropsyche_user');
+    if (authUser && !user) {
+      const storedUser = localStorage.getItem('astropsyche_user');
+      if (storedUser) {
+        try {
+          const parsedUser = JSON.parse(storedUser);
+          // Only load if it matches the current auth user
+          if (parsedUser.id === authUser.id) {
+            setUser(parsedUser);
+          }
+        } catch (error) {
+          console.error('Failed to parse stored user:', error);
+          localStorage.removeItem('astropsyche_user');
+        }
       }
     }
-  }, [user, setUser]);
+  }, [authUser, user, setUser]);
 
   return {
     // State
@@ -295,12 +254,11 @@ export function useAstroPsyche() {
     downloadPDF,
     shareReport,
     getUserReports,
-    signOut,
     saveConversationData,
     checkConnection,
     
     // Utilities
-    isAuthenticated: !!user,
+    isAuthenticated: !!authUser,
     isConnected: connectionStatus === 'connected'
   };
 }

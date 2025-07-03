@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronRight, Download, Share2, Brain, Sparkles, AlertCircle, Database, Wifi } from 'lucide-react';
+import { ChevronRight, Download, Share2, Brain, Sparkles, AlertCircle, Database, Wifi, LogOut } from 'lucide-react';
 import * as THREE from 'three';
 import { useAstroPsyche } from './hooks/useAstroPsyche';
+import { useAuth } from './hooks/useAuth';
+import { AuthModal } from './components/AuthModal';
 import { ConversationalQuestionnaire } from './components/ConversationalQuestionnaire';
 import { generatePDF, shareReport } from './services/reportService';
 import { isDemoMode } from './lib/supabase';
@@ -289,7 +291,7 @@ const PrimaryButton = ({ onClick, children, className = '', disabled = false }) 
         whileTap={{ scale: 0.95 }}
         onClick={onClick}
         disabled={disabled}
-        className={`px-8 py-3 bg-purple-500/80 text-white font-bold rounded-full transition-all duration-300 shadow-lg backdrop-blur-sm border border-purple-400/50 ${className} ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+        className={`px-6 sm:px-8 py-3 bg-purple-500/80 text-white font-bold rounded-full transition-all duration-300 shadow-lg backdrop-blur-sm border border-purple-400/50 text-sm sm:text-base ${className} ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
     >
         {children}
     </motion.button>
@@ -304,7 +306,7 @@ const InputField = ({ value, onChange, name, type = "text", placeholder, icon })
             placeholder={placeholder}
             value={value}
             onChange={onChange}
-            className="w-full bg-black/20 border border-white/20 rounded-lg py-3 pl-12 pr-4 text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all duration-300"
+            className="w-full bg-black/20 border border-white/20 rounded-lg py-3 pl-12 pr-4 text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all duration-300 text-sm sm:text-base"
         />
     </div>
 );
@@ -317,17 +319,20 @@ const ConnectionStatus = ({ status, onRetry, isDemo }) => {
         <motion.div
             initial={{ opacity: 0, y: -50 }}
             animate={{ opacity: 1, y: 0 }}
-            className="fixed top-4 left-1/2 -translate-x-1/2 z-50"
+            className="fixed top-4 left-1/2 -translate-x-1/2 z-50 px-4"
         >
-            <div className={`${isDemo ? 'bg-blue-500/90' : 'bg-red-500/90'} backdrop-blur-sm text-white px-4 py-2 rounded-lg flex items-center gap-2`}>
+            <div className={`${isDemo ? 'bg-blue-500/90' : 'bg-red-500/90'} backdrop-blur-sm text-white px-3 sm:px-4 py-2 rounded-lg flex items-center gap-2 text-xs sm:text-sm`}>
                 {isDemo ? <Database size={16} /> : <AlertCircle size={16} />}
-                <span className="text-sm">
+                <span className="hidden sm:inline">
                     {isDemo 
                         ? 'Running in demo mode - data stored locally' 
                         : status === 'checking' 
                             ? 'Checking connection...' 
                             : 'Database connection failed'
                     }
+                </span>
+                <span className="sm:hidden">
+                    {isDemo ? 'Demo mode' : 'Connection failed'}
                 </span>
                 {status === 'disconnected' && !isDemo && (
                     <button
@@ -343,16 +348,16 @@ const ConnectionStatus = ({ status, onRetry, isDemo }) => {
 };
 
 // --- PAGE COMPONENTS ---
-const LandingPage = ({ onNext }) => {
+const LandingPage = ({ onNext, onShowAuth }) => {
     useEffect(() => {
         const handleKeyPress = (e) => {
             if (e.key === 'Enter') {
-                onNext();
+                onShowAuth();
             }
         };
         window.addEventListener('keydown', handleKeyPress);
         return () => window.removeEventListener('keydown', handleKeyPress);
-    }, [onNext]);
+    }, [onShowAuth]);
 
     return (
         <motion.div
@@ -366,7 +371,7 @@ const LandingPage = ({ onNext }) => {
                 initial={{ y: 20, opacity: 0 }}
                 animate={{ y: 0, opacity: 1 }}
                 transition={{ delay: 0.5, duration: 1 }}
-                className="text-4xl md:text-6xl font-thin tracking-wider mb-6"
+                className="text-3xl sm:text-4xl md:text-6xl font-thin tracking-wider mb-4 sm:mb-6"
             >
                 Astro<span className="font-light text-purple-300">Psyche</span>
             </motion.h1>
@@ -374,21 +379,21 @@ const LandingPage = ({ onNext }) => {
                 initial={{ y: 20, opacity: 0 }}
                 animate={{ y: 0, opacity: 1 }}
                 transition={{ delay: 0.8, duration: 1 }}
-                className="text-lg md:text-xl text-white/70 mb-12 max-w-md"
+                className="text-base sm:text-lg md:text-xl text-white/70 mb-8 sm:mb-12 max-w-md px-4"
             >
                 "Discover your cosmic blueprint through AI-powered conversation..."
             </motion.p>
-            <PrimaryButton onClick={onNext}>
+            <PrimaryButton onClick={onShowAuth}>
                 Begin Your Journey
             </PrimaryButton>
-            <p className="text-sm text-white/40 mt-4">Press Enter to continue</p>
+            <p className="text-xs sm:text-sm text-white/40 mt-4">Press Enter to continue</p>
         </motion.div>
     );
 };
 
-const BirthDataPage = ({ onNext, formStep, setFormStep, backgroundRef }) => {
+const BirthDataPage = ({ onNext, formStep, setFormStep, backgroundRef, user }) => {
     const [formData, setFormData] = useState({
-        name: '',
+        name: user?.user_metadata?.full_name || '',
         dob: '',
         time: '',
         location: null,
@@ -476,52 +481,52 @@ const BirthDataPage = ({ onNext, formStep, setFormStep, backgroundRef }) => {
 
     const steps = [
         <motion.div key="name" {...motionProps} className="w-full flex flex-col items-center">
-            <h2 className="text-2xl font-bold text-white mb-6 text-center">What's your name?</h2>
+            <h2 className="text-xl sm:text-2xl font-bold text-white mb-4 sm:mb-6 text-center px-4">What's your name?</h2>
             <InputField name="name" placeholder="Your Name" value={formData.name} onChange={handleInputChange} />
-            <div className="mt-8 flex flex-col items-center">
+            <div className="mt-6 sm:mt-8 flex flex-col items-center">
                 <PrimaryButton onClick={nextFormStep} disabled={!formData.name}>Continue</PrimaryButton>
                 <p className="text-xs text-white/40 mt-2">Press Enter to continue</p>
             </div>
         </motion.div>,
         <motion.div key="dob" {...motionProps} className="w-full flex flex-col items-center">
-            <h2 className="text-2xl font-bold text-white mb-6 text-center">When were you born?</h2>
+            <h2 className="text-xl sm:text-2xl font-bold text-white mb-4 sm:mb-6 text-center px-4">When were you born?</h2>
             <InputField name="dob" type="date" placeholder="Date of Birth" value={formData.dob} onChange={handleInputChange} />
-            <div className="mt-8 flex flex-col items-center">
+            <div className="mt-6 sm:mt-8 flex flex-col items-center">
                 <PrimaryButton onClick={nextFormStep} disabled={!formData.dob}>Continue</PrimaryButton>
                 <p className="text-xs text-white/40 mt-2">Press Enter to continue</p>
             </div>
         </motion.div>,
         <motion.div key="time" {...motionProps} className="w-full flex flex-col items-center">
-            <h2 className="text-2xl font-bold text-white mb-6 text-center">What time were you born?</h2>
+            <h2 className="text-xl sm:text-2xl font-bold text-white mb-4 sm:mb-6 text-center px-4">What time were you born?</h2>
             <InputField name="time" type="time" placeholder="Time of Birth" value={formData.time} onChange={handleInputChange} />
-            <div className="mt-8 flex flex-col items-center">
+            <div className="mt-6 sm:mt-8 flex flex-col items-center">
                 <PrimaryButton onClick={nextFormStep} disabled={!formData.time}>Continue</PrimaryButton>
                 <p className="text-xs text-white/40 mt-2">Press Enter to continue</p>
             </div>
         </motion.div>,
         <motion.div key="location" {...motionProps} className="w-full flex flex-col items-center">
-            <h2 className="text-2xl font-bold text-white mb-6 text-center">Where were you born?</h2>
+            <h2 className="text-xl sm:text-2xl font-bold text-white mb-4 sm:mb-6 text-center px-4">Where were you born?</h2>
             <InputField name="locationInput" placeholder="City, Country" value={formData.locationInput} onChange={handleInputChange} />
-            <div className="mt-8 flex flex-col items-center">
+            <div className="mt-6 sm:mt-8 flex flex-col items-center">
                 <PrimaryButton onClick={handleLocationSelect} disabled={!formData.locationInput}>Continue</PrimaryButton>
                 <p className="text-xs text-white/40 mt-2">Press Enter to continue</p>
             </div>
         </motion.div>,
         <motion.div key="confirm" {...motionProps} className="w-full flex flex-col items-center">
-            <h2 className="text-2xl font-bold text-white mb-6 text-center">Ready to begin?</h2>
-            <div className="text-center mb-6">
-                <p className="text-white/80">Name: {formData.name}</p>
-                <p className="text-white/80">Born: {formData.dob} at {formData.time}</p>
-                <p className="text-white/80">Location: {formData.location?.name}</p>
+            <h2 className="text-xl sm:text-2xl font-bold text-white mb-4 sm:mb-6 text-center px-4">Ready to begin?</h2>
+            <div className="text-center mb-4 sm:mb-6 px-4">
+                <p className="text-white/80 text-sm sm:text-base">Name: {formData.name}</p>
+                <p className="text-white/80 text-sm sm:text-base">Born: {formData.dob} at {formData.time}</p>
+                <p className="text-white/80 text-sm sm:text-base">Location: {formData.location?.name}</p>
             </div>
-            <div className="mt-8 flex flex-col items-center">
+            <div className="mt-6 sm:mt-8 flex flex-col items-center">
                 <PrimaryButton onClick={handleSubmit} disabled={loading || isLoading}>
                     {loading || isLoading ? 'Creating Profile...' : 'Start Conversation'}
                 </PrimaryButton>
                 <p className="text-xs text-white/40 mt-2">Press Enter to continue</p>
             </div>
             {error && (
-                <div className="mt-4 p-3 bg-red-500/20 border border-red-500/30 rounded-lg">
+                <div className="mt-4 p-3 bg-red-500/20 border border-red-500/30 rounded-lg mx-4">
                     <p className="text-red-300 text-sm">{error}</p>
                 </div>
             )}
@@ -532,10 +537,10 @@ const BirthDataPage = ({ onNext, formStep, setFormStep, backgroundRef }) => {
         return (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="h-full w-full flex flex-col items-center justify-center text-white p-4">
                 <Sparkles className="animate-spin mb-4" size={48} />
-                <p className="mt-8 text-lg text-white/80">Setting up your cosmic profile...</p>
-                <p className="text-sm text-white/60 mt-2">Calculating astrological chart</p>
+                <p className="mt-8 text-lg text-white/80 text-center">Setting up your cosmic profile...</p>
+                <p className="text-sm text-white/60 mt-2 text-center">Calculating astrological chart</p>
                 {error && (
-                    <div className="mt-4 p-3 bg-red-500/20 border border-red-500/30 rounded-lg max-w-md">
+                    <div className="mt-4 p-3 bg-red-500/20 border border-red-500/30 rounded-lg max-w-md mx-4">
                         <p className="text-red-300 text-sm">{error}</p>
                     </div>
                 )}
@@ -545,7 +550,7 @@ const BirthDataPage = ({ onNext, formStep, setFormStep, backgroundRef }) => {
     
     return (
         <motion.div initial={{ opacity: 0, y: 50 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -50 }} transition={{ duration: 0.7 }} className="h-full w-full flex items-center justify-center p-4">
-            <GlassPanel className="w-full max-w-md p-8 min-h-[350px] flex items-center">
+            <GlassPanel className="w-full max-w-md p-6 sm:p-8 min-h-[350px] flex items-center">
                 <AnimatePresence mode="wait">
                     {steps[formStep]}
                 </AnimatePresence>
@@ -571,7 +576,7 @@ const ConversationalQAPage = ({ onNext, user }) => {
             <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                className="h-full w-full flex items-center justify-center text-white"
+                className="h-full w-full flex items-center justify-center text-white p-4"
             >
                 <div className="text-center">
                     <Brain className="animate-pulse mx-auto mb-4" size={48} />
@@ -658,7 +663,7 @@ const FinalReportPage = ({ onRestart, user }) => {
             <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                className="h-full w-full flex items-center justify-center text-white"
+                className="h-full w-full flex items-center justify-center text-white p-4"
             >
                 <div className="text-center">
                     <Sparkles className="animate-spin mx-auto mb-4" size={48} />
@@ -676,44 +681,44 @@ const FinalReportPage = ({ onRestart, user }) => {
             transition={{ duration: 0.7 }}
             className="h-full w-full flex items-center justify-center p-4 text-white"
         >
-            <GlassPanel className="w-full max-w-3xl p-6 md:p-8 flex flex-col">
-                <h2 className="text-3xl font-bold text-center mb-6 bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-blue-300">
+            <GlassPanel className="w-full max-w-4xl p-4 sm:p-6 md:p-8 flex flex-col max-h-[90vh]">
+                <h2 className="text-2xl sm:text-3xl font-bold text-center mb-4 sm:mb-6 bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-blue-300 px-4">
                     Your Cosmic Blueprint
                 </h2>
                 
-                <div className="flex-grow overflow-y-auto space-y-6 p-2" style={{maxHeight: '60vh'}}>
-                    <div>
-                        <h3 className="font-bold text-xl text-purple-300 mb-2">Archetype: {report.archetype_name}</h3>
+                <div className="flex-grow overflow-y-auto space-y-4 sm:space-y-6 p-2" style={{maxHeight: '60vh'}}>
+                    <div className="px-2">
+                        <h3 className="font-bold text-lg sm:text-xl text-purple-300 mb-2">Archetype: {report.archetype_name}</h3>
                         {report.inspirational_line && (
-                            <p className="text-white/80 italic">"{report.inspirational_line}"</p>
+                            <p className="text-white/80 italic text-sm sm:text-base">"{report.inspirational_line}"</p>
                         )}
                     </div>
-                    <div>
-                        <h3 className="font-bold text-xl text-purple-300 mb-2">Core Insights</h3>
-                        <p className="text-white/90 leading-relaxed">{report.summary_detailed}</p>
+                    <div className="px-2">
+                        <h3 className="font-bold text-lg sm:text-xl text-purple-300 mb-2">Core Insights</h3>
+                        <p className="text-white/90 leading-relaxed text-sm sm:text-base">{report.summary_detailed}</p>
                     </div>
                     {report.astrology_breakdown && (
-                        <div>
-                            <h3 className="font-bold text-xl text-purple-300 mb-2">Astrological Foundation</h3>
-                            <p className="text-white/90 leading-relaxed">{report.astrology_breakdown}</p>
+                        <div className="px-2">
+                            <h3 className="font-bold text-lg sm:text-xl text-purple-300 mb-2">Astrological Foundation</h3>
+                            <p className="text-white/90 leading-relaxed text-sm sm:text-base">{report.astrology_breakdown}</p>
                         </div>
                     )}
                     {report.psychology_insights && (
-                        <div>
-                            <h3 className="font-bold text-xl text-purple-300 mb-2">Psychological Patterns</h3>
-                            <p className="text-white/90 leading-relaxed">{report.psychology_insights}</p>
+                        <div className="px-2">
+                            <h3 className="font-bold text-lg sm:text-xl text-purple-300 mb-2">Psychological Patterns</h3>
+                            <p className="text-white/90 leading-relaxed text-sm sm:text-base">{report.psychology_insights}</p>
                         </div>
                     )}
                     {report.mind_vs_heart && (
-                        <div>
-                            <h3 className="font-bold text-xl text-purple-300 mb-2">Mind vs. Heart</h3>
-                            <p className="text-white/90 leading-relaxed">{report.mind_vs_heart}</p>
+                        <div className="px-2">
+                            <h3 className="font-bold text-lg sm:text-xl text-purple-300 mb-2">Mind vs. Heart</h3>
+                            <p className="text-white/90 leading-relaxed text-sm sm:text-base">{report.mind_vs_heart}</p>
                         </div>
                     )}
                     {report.affirmations && (
-                        <div>
-                            <h3 className="font-bold text-xl text-purple-300 mb-2">Personal Affirmations</h3>
-                            <p className="text-white/90 leading-relaxed italic">{report.affirmations}</p>
+                        <div className="px-2">
+                            <h3 className="font-bold text-lg sm:text-xl text-purple-300 mb-2">Personal Affirmations</h3>
+                            <p className="text-white/90 leading-relaxed italic text-sm sm:text-base">{report.affirmations}</p>
                         </div>
                     )}
                 </div>
@@ -722,24 +727,24 @@ const FinalReportPage = ({ onRestart, user }) => {
                     initial={{ y: 50, opacity: 0 }}
                     animate={{ y: 0, opacity: 1 }}
                     transition={{ delay: 0.5, type: "spring", stiffness: 100 }}
-                    className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-4"
+                    className="mt-6 sm:mt-8 flex flex-col sm:flex-row items-center justify-center gap-3 sm:gap-4 px-4"
                 >
                     <button 
                         onClick={handleDownloadPDF}
-                        className="flex items-center gap-2 px-6 py-3 bg-blue-500/80 text-white font-semibold rounded-full transition-all duration-300 hover:bg-blue-500 shadow-lg hover:scale-105"
+                        className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 sm:px-6 py-3 bg-blue-500/80 text-white font-semibold rounded-full transition-all duration-300 hover:bg-blue-500 shadow-lg hover:scale-105 text-sm sm:text-base"
                     >
-                        <Download size={20} /> Download PDF
+                        <Download size={18} /> Download PDF
                     </button>
                     <button 
                         onClick={handleShare}
-                        className="flex items-center gap-2 px-6 py-3 bg-transparent border border-white/30 text-white font-semibold rounded-full transition-all duration-300 hover:bg-white/10 shadow-lg hover:scale-105"
+                        className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 sm:px-6 py-3 bg-transparent border border-white/30 text-white font-semibold rounded-full transition-all duration-300 hover:bg-white/10 shadow-lg hover:scale-105 text-sm sm:text-base"
                     >
-                        <Share2 size={20} /> Share
+                        <Share2 size={18} /> Share
                     </button>
                 </motion.div>
-                <div className="mt-6 text-center">
-                    <button onClick={onRestart} className="text-white/50 hover:text-white transition">Start Over</button>
-                    <p className="text-xs text-white/40 mt-2">Press D to download • S to share • R to restart</p>
+                <div className="mt-4 sm:mt-6 text-center px-4">
+                    <button onClick={onRestart} className="text-white/50 hover:text-white transition text-sm sm:text-base">Start Over</button>
+                    <p className="text-xs text-white/40 mt-2 hidden sm:block">Press D to download • S to share • R to restart</p>
                 </div>
             </GlassPanel>
         </motion.div>
@@ -750,8 +755,10 @@ const FinalReportPage = ({ onRestart, user }) => {
 export default function App() {
     const [appStep, setAppStep] = useState(0);
     const [formStep, setFormStep] = useState(0);
+    const [showAuthModal, setShowAuthModal] = useState(false);
     const backgroundRef = useRef(null);
-    const { user, connectionStatus, checkConnection } = useAstroPsyche();
+    const { user: appUser, connectionStatus, checkConnection } = useAstroPsyche();
+    const { user: authUser, loading: authLoading, signOut } = useAuth();
     const isDemo = isDemoMode();
 
     const nextAppStep = () => {
@@ -764,11 +771,38 @@ export default function App() {
         setFormStep(0);
     };
 
+    const handleAuthSuccess = () => {
+        setShowAuthModal(false);
+        nextAppStep();
+    };
+
+    const handleSignOut = async () => {
+        await signOut();
+        restart();
+    };
+
+    // Show loading while checking auth
+    if (authLoading) {
+        return (
+            <main className="h-screen w-screen bg-black font-sans overflow-hidden flex items-center justify-center">
+                <div className="text-white text-center">
+                    <Sparkles className="animate-spin mx-auto mb-4" size={48} />
+                    <p>Loading...</p>
+                </div>
+            </main>
+        );
+    }
+
+    // If not authenticated and not on landing page, show landing
+    if (!authUser && appStep > 0) {
+        setAppStep(0);
+    }
+
     const pages = [
-        <LandingPage key="landing" onNext={nextAppStep} />,
-        <BirthDataPage key="birth-data" onNext={nextAppStep} formStep={formStep} setFormStep={setFormStep} backgroundRef={backgroundRef} />,
-        <ConversationalQAPage key="conversational-qa" onNext={nextAppStep} user={user} />,
-        <FinalReportPage key="final-report" onRestart={restart} user={user} />
+        <LandingPage key="landing" onNext={nextAppStep} onShowAuth={() => setShowAuthModal(true)} />,
+        <BirthDataPage key="birth-data" onNext={nextAppStep} formStep={formStep} setFormStep={setFormStep} backgroundRef={backgroundRef} user={authUser} />,
+        <ConversationalQAPage key="conversational-qa" onNext={nextAppStep} user={appUser} />,
+        <FinalReportPage key="final-report" onRestart={restart} user={appUser} />
     ];
 
     return (
@@ -779,11 +813,35 @@ export default function App() {
                 onRetry={checkConnection} 
                 isDemo={isDemo}
             />
+            
+            {/* Auth Status & Sign Out */}
+            {authUser && (
+                <div className="fixed top-4 right-4 z-50">
+                    <button
+                        onClick={handleSignOut}
+                        className="bg-white/10 backdrop-blur-sm text-white px-3 py-2 rounded-lg flex items-center gap-2 hover:bg-white/20 transition-colors text-sm"
+                    >
+                        <LogOut size={16} />
+                        <span className="hidden sm:inline">Sign Out</span>
+                    </button>
+                </div>
+            )}
+            
             <div className="relative z-10 h-full w-full">
                 <AnimatePresence mode="wait">
                     {pages[appStep]}
                 </AnimatePresence>
             </div>
+
+            <AnimatePresence>
+                {showAuthModal && (
+                    <AuthModal
+                        isOpen={showAuthModal}
+                        onClose={() => setShowAuthModal(false)}
+                        onSuccess={handleAuthSuccess}
+                    />
+                )}
+            </AnimatePresence>
         </main>
     );
 }
